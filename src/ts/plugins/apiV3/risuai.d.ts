@@ -959,6 +959,84 @@ interface ProviderOptions {
 }
 
 // ============================================================================
+// MCP Tool Types
+// ============================================================================
+
+/**
+ * Text content returned by MCP tools
+ */
+interface MCPToolTextContent {
+    type: 'text';
+    text: string;
+}
+
+/**
+ * Image or audio content returned by MCP tools
+ */
+interface MCPToolImageAudioContent {
+    type: 'image' | 'audio';
+    /** Base64 encoded data */
+    data: string;
+    /** MIME type, e.g., 'image/png', 'audio/mp3' */
+    mimeType: string;
+}
+
+/**
+ * Resource content returned by MCP tools
+ */
+interface MCPToolResourceContent {
+    type: 'resource';
+    resource: {
+        uri: string;
+        mimeType: string;
+        text: string;
+    };
+}
+
+/**
+ * Union of all content types that MCP tools can return
+ */
+type MCPToolContent = MCPToolTextContent | MCPToolImageAudioContent | MCPToolResourceContent;
+
+/**
+ * JSON Schema for MCP tool input validation
+ */
+interface MCPToolInputSchema {
+    type: 'object';
+    properties: Record<string, {
+        type: 'string' | 'number' | 'boolean' | 'array' | 'object';
+        description?: string;
+        enum?: (string | number)[];
+        items?: any;
+        default?: any;
+    }>;
+    required?: string[];
+}
+
+/**
+ * Tool definition for MCP registration
+ */
+interface MCPToolDefinition {
+    /**
+     * Tool name (will be auto-prefixed with plugin name as `{pluginName}__{name}`)
+     * Can only contain letters, numbers, underscores, and hyphens.
+     * Cannot contain the separator `__`.
+     */
+    name: string;
+    /** Human-readable description of what the tool does */
+    description: string;
+    /** JSON Schema defining the tool's input parameters */
+    inputSchema: MCPToolInputSchema;
+    /** Optional annotations/metadata for the tool */
+    annotations?: Record<string, any>;
+}
+
+/**
+ * Handler function for MCP tool calls
+ */
+type MCPToolHandler = (args: Record<string, any>) => Promise<MCPToolContent[]>;
+
+// ============================================================================
 // Risuai Global API
 // ============================================================================
 
@@ -1408,6 +1486,122 @@ interface RisuaiPluginAPI {
      * @returns Standard array of items
      */
     unwarpSafeArray<T>(safeArray: SafeClassArray<T>): Promise<T[]>;
+
+    // ========== MCP Tool APIs ==========
+
+    /**
+     * Registers an MCP tool that AI models can invoke
+     *
+     * Tool names are automatically prefixed with your plugin name to prevent conflicts.
+     * For example, if your plugin is named "weather" and you register a tool named "forecast",
+     * the full tool name will be "weather:forecast".
+     *
+     * @param tool - Tool definition including name, description, and input schema
+     * @param handler - Async function that handles tool invocations
+     * @returns The full prefixed tool name
+     *
+     * @example
+     * ```typescript
+     * // Register a simple tool
+     * const toolName = await risuai.registerMCPTool(
+     *   {
+     *     name: 'get_weather',
+     *     description: 'Get the current weather for a location',
+     *     inputSchema: {
+     *       type: 'object',
+     *       properties: {
+     *         location: {
+     *           type: 'string',
+     *           description: 'City name or coordinates'
+     *         },
+     *         units: {
+     *           type: 'string',
+     *           enum: ['celsius', 'fahrenheit'],
+     *           description: 'Temperature units'
+     *         }
+     *       },
+     *       required: ['location']
+     *     }
+     *   },
+     *   async (args) => {
+     *     const weather = await fetchWeather(args.location, args.units);
+     *     return [{
+     *       type: 'text',
+     *       text: `Temperature in ${args.location}: ${weather.temp}°`
+     *     }];
+     *   }
+     * );
+     *
+     * console.log(toolName); // "myplugin__get_weather"
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Return an image
+     * await risuai.registerMCPTool(
+     *   {
+     *     name: 'generate_chart',
+     *     description: 'Generate a chart image',
+     *     inputSchema: {
+     *       type: 'object',
+     *       properties: {
+     *         data: { type: 'array', description: 'Chart data points' }
+     *       },
+     *       required: ['data']
+     *     }
+     *   },
+     *   async (args) => {
+     *     const imageBase64 = await generateChart(args.data);
+     *     return [{
+     *       type: 'image',
+     *       data: imageBase64,
+     *       mimeType: 'image/png'
+     *     }];
+     *   }
+     * );
+     * ```
+     */
+    registerMCPTool(
+        tool: MCPToolDefinition,
+        handler: MCPToolHandler
+    ): Promise<string>;
+
+    /**
+     * Unregisters a previously registered MCP tool
+     *
+     * You can only unregister tools that were registered by your own plugin.
+     *
+     * @param toolName - The tool name (with or without plugin prefix)
+     * @returns True if the tool was found and removed, false otherwise
+     *
+     * @example
+     * ```typescript
+     * // Both of these work:
+     * await risuai.unregisterMCPTool('get_weather');
+     * await risuai.unregisterMCPTool('myplugin__get_weather');
+     * ```
+     */
+    unregisterMCPTool(toolName: string): Promise<boolean>;
+
+    /**
+     * Gets a list of MCP tools registered by this plugin
+     *
+     * @returns Array of tool definitions registered by this plugin
+     *
+     * @example
+     * ```typescript
+     * const myTools = await risuai.getMCPToolList();
+     * console.log(`I have ${myTools.length} tools registered`);
+     * for (const tool of myTools) {
+     *   console.log(`- ${tool.name}: ${tool.description}`);
+     * }
+     * ```
+     */
+    getMCPToolList(): Promise<Array<{
+        name: string;
+        description: string;
+        inputSchema: any;
+    }>>;
 }
 
 // ============================================================================

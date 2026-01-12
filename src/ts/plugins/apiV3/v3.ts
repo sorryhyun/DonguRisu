@@ -10,6 +10,8 @@ import { alertConfirm, alertError, alertNormal } from "src/ts/alert";
 import { language } from "src/lang";
 import { checkCharOrder, forageStorage, getFetchLogs } from "src/ts/globalApi.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform";
+import { getPluginMCPClient, PLUGIN_TOOL_SEPARATOR } from "src/ts/process/mcp/pluginmcp";
+import type { RPCToolCallContent } from "src/ts/process/mcp/mcplib";
 
 /*
     V3 API for RisuAI Plugins
@@ -776,6 +778,83 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
         requestPluginPermission: (permission:string) => {
             return getPluginPermission(plugin.name, permission as any);
         },
+
+        // ========== MCP Tool APIs ==========
+
+        /**
+         * Register an MCP tool that AI models can invoke.
+         * Tool names are automatically prefixed with plugin name.
+         */
+        registerMCPTool: (
+            tool: {
+                name: string;
+                description: string;
+                inputSchema: any;
+                annotations?: any;
+            },
+            handler: (args: any) => Promise<RPCToolCallContent[]>
+        ): string => {
+            // Validate tool definition
+            if (!tool.name || typeof tool.name !== 'string') {
+                throw new Error('Tool name is required and must be a string');
+            }
+            if (!/^[a-zA-Z0-9_-]+$/.test(tool.name)) {
+                throw new Error('Tool name can only contain letters, numbers, underscores, and hyphens');
+            }
+            if (tool.name.includes(PLUGIN_TOOL_SEPARATOR)) {
+                throw new Error(`Tool name cannot contain the separator "${PLUGIN_TOOL_SEPARATOR}"`);
+            }
+            if (!tool.description || typeof tool.description !== 'string') {
+                throw new Error('Tool description is required and must be a string');
+            }
+            if (!tool.inputSchema || typeof tool.inputSchema !== 'object') {
+                throw new Error('Tool inputSchema is required and must be an object');
+            }
+
+            const client = getPluginMCPClient();
+            const prefixedName = client.registerTool(plugin.name, tool, handler);
+
+            // Register cleanup callback for plugin unload
+            addPluginUnloadCallback(plugin.name, () => {
+                client.unregisterTool(prefixedName);
+            });
+
+            return prefixedName;
+        },
+
+        /**
+         * Unregister a previously registered MCP tool.
+         * You can only unregister tools from your own plugin.
+         */
+        unregisterMCPTool: (toolName: string): boolean => {
+            const client = getPluginMCPClient();
+
+            // toolName can be either prefixed or unprefixed
+            let prefixedName = toolName;
+            if (!toolName.includes(PLUGIN_TOOL_SEPARATOR)) {
+                prefixedName = `${plugin.name}${PLUGIN_TOOL_SEPARATOR}${toolName}`;
+            }
+
+            // Security: Only allow unregistering own tools
+            if (!prefixedName.startsWith(`${plugin.name}${PLUGIN_TOOL_SEPARATOR}`)) {
+                throw new Error('Cannot unregister tools from other plugins');
+            }
+
+            return client.unregisterTool(prefixedName);
+        },
+
+        /**
+         * Get list of MCP tools registered by this plugin.
+         */
+        getMCPToolList: async (): Promise<Array<{
+            name: string;
+            description: string;
+            inputSchema: any;
+        }>> => {
+            const client = getPluginMCPClient();
+            return client.getPluginTools(plugin.name);
+        },
+
         //Internal use APIs
         _getOldKeys: () => {
             return Object.keys(oldApis)

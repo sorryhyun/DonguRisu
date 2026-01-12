@@ -823,6 +823,82 @@ const imageData = await Risuai.readImage('asset-id');
 await Risuai.saveAsset(assetData, 'my-asset');
 ```
 
+### MCP Tools
+
+Register MCP (Model Context Protocol) tools that AI models can invoke during chat:
+
+```javascript
+// Register a tool
+const toolName = await Risuai.registerMCPTool(
+  {
+    name: 'search_documents',
+    description: 'Search through user documents',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum results to return'
+        }
+      },
+      required: ['query']
+    }
+  },
+  async (args) => {
+    // Handle the tool call
+    const results = await searchDocuments(args.query, args.limit);
+    return [{
+      type: 'text',
+      text: JSON.stringify(results)
+    }];
+  }
+);
+
+console.log(toolName); // "myplugin__search_documents"
+```
+
+Tool names are automatically prefixed with your plugin name using `__` as the separator (e.g., `{pluginName}__{toolName}`) to prevent conflicts.
+
+**Return Types:**
+```javascript
+// Text response
+return [{ type: 'text', text: 'Result text' }];
+
+// Image response
+return [{
+  type: 'image',
+  data: 'base64-encoded-data',
+  mimeType: 'image/png'
+}];
+
+// Multiple content items
+return [
+  { type: 'text', text: 'Here is the chart:' },
+  { type: 'image', data: chartData, mimeType: 'image/png' }
+];
+```
+
+**Unregister Tools:**
+```javascript
+// Using short name
+await Risuai.unregisterMCPTool('search_documents');
+
+// Using full prefixed name
+await Risuai.unregisterMCPTool('myplugin__search_documents');
+```
+
+**List Registered Tools:**
+```javascript
+const myTools = await Risuai.getMCPToolList();
+for (const tool of myTools) {
+  console.log(`${tool.name}: ${tool.description}`);
+}
+```
+
 ## Best Practices
 
 ### 1. Always Use Async/Await

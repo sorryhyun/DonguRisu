@@ -11,6 +11,7 @@ import { selectedCharID } from './stores.svelte';
 import { calcString } from './process/infunctions';
 import { findCharacterbyId, getPersonaPrompt, getUserIcon, getUserName, parseKeyValue, pickHashRand, replaceAsync} from './util';
 import { getInlayAssetBlob } from './process/files/inlays';
+import { decodeToolCall } from './process/mcp/mcp';
 import { getModuleAssets, getModuleLorebooks, getModules } from './process/modules';
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
@@ -668,7 +669,7 @@ export interface simpleCharacterArgument{
     triggerscript?: triggerscript[]
 }
 
-function parseThoughtsAndTools(data:string){
+async function parseThoughtsAndTools(data:string){
     let result = '', i = 0
     while (i < data.length) {
         if (data.slice(i, i + 10) === '<Thoughts>') {
@@ -686,8 +687,19 @@ function parseThoughtsAndTools(data:string){
         }
         result += data[i++]
     }
-    return result.replace(/<tool_call>(.+?)<\/tool_call>/gms, (full, txt:string) => {
-        return `<div class="x-risu-tool-call">🛠️ ${language.toolCalled.replace('{{tool}}',txt.split('\uf100')?.[1] ?? 'unknown')}</div>\n\n`
+    return await replaceAsync(result, /<tool_call>(.+?)<\/tool_call>/gms, async (full:string, txt:string) => {
+        const toolName = txt.split('\uf100')?.[1] ?? 'unknown'
+        const toolData = await decodeToolCall(txt)
+
+        let resultContent = ''
+        if (toolData?.response) {
+            const responseText = toolData.response
+                .map(r => r.type === 'text' ? r.text : `[${r.type}]`)
+                .join('\n')
+            resultContent = `<div class="x-risu-tool-result">${responseText}</div>`
+        }
+
+        return `<details class="x-risu-tool-call"><summary>🛠️ ${language.toolCalled.replace('{{tool}}', toolName)}</summary>${resultContent}</details>\n\n`
     })
 }
 
@@ -721,7 +733,7 @@ export async function ParseMarkdown(
 
     data = await parseInlayAssets(data ?? '')
 
-    data = parseThoughtsAndTools(data)
+    data = await parseThoughtsAndTools(data)
 
     data = encodeStyle(data)
     if(mode === 'normal' || mode === 'notrim'){
