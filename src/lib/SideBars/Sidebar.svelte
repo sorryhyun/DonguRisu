@@ -10,7 +10,10 @@
     OpenRealmStore,
     PlaygroundStore,
 
-    QuickSettings
+    QuickSettings,
+
+    additionalHamburgerMenu
+
 
   } from "../../ts/stores.svelte";
     import { setDatabase, type folder } from "../../ts/storage/database.svelte";
@@ -27,7 +30,7 @@
     HomeIcon,
     WrenchIcon,
     User2Icon,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
     import {
   addCharacter,
     changeChar,
@@ -35,11 +38,9 @@
   } from "../../ts/characters";
     import CharConfig from "./CharConfig.svelte";
     import { language } from "../../lang";
-    import { onDestroy } from "svelte";
     import { isEqual } from "lodash";
     import SidebarAvatar from "./SidebarAvatar.svelte";
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
-    import { get } from "svelte/store";
     import { getCharacterIndexObject, selectSingleFile } from "src/ts/util";
     import { v4 } from "uuid";
     import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
@@ -49,6 +50,7 @@
   import { sideBarSize } from "src/ts/gui/guisize";
   import DevTool from "./DevTool.svelte";
     import QuickSettingsGui from "../Others/QuickSettingsGUI.svelte";
+    import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
@@ -114,7 +116,7 @@
           id: folder.id,
           name: folder.name,
           color: folder.color,
-          img: folder.img,
+          img: folder.imgFile,
         });
       }
     }
@@ -144,7 +146,7 @@
       const da = db.characterOrder[mainIndex.index]
       if(typeof(da) !== 'string'){
         mainId = da.id
-        movingFolder = safeStructuredClone($state.snapshot(da))
+        movingFolder = $state.snapshot(da)
         if(targetIndex.folder){
           return
         }
@@ -218,6 +220,58 @@
     return -1
   }
 
+  function scrollToActiveCharacter() {
+    const selectedId = $selectedCharID
+    if (selectedId === -1) return
+    
+    const characterId = DBState.db.characters[selectedId]?.chaId
+    if (!characterId) return
+    
+    let targetFolderId: string | null = null
+    
+    for (const item of charImages) {
+      if (item.type === 'folder') {
+        const foundChar = item.folder.find(c => 
+          DBState.db.characters[c.index]?.chaId === characterId
+        )
+        if (foundChar) {
+          targetFolderId = item.id
+          break
+        }
+      }
+    }
+    
+    if (targetFolderId && !openFolders.includes(targetFolderId)) {
+      openFolders.push(targetFolderId)
+      openFolders = openFolders
+    }
+    
+    setTimeout(() => {
+      const activeElement = document.querySelector(`[data-char-id="${characterId}"]`)
+      if (activeElement) {
+        activeElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start' 
+        })
+      }
+    }, 100)
+  }
+
+  $effect(() => {
+    if (typeof window === 'undefined') return
+    
+    const handler = () => {
+      scrollToActiveCharacter()
+    }
+    
+    window.addEventListener('scrollToActiveCharacter', handler)
+    
+    return () => {
+      window.removeEventListener('scrollToActiveCharacter', handler)
+    }
+  })
+
+
   const createFolder = (mainIndex:DragData, targetIndex:DragData) => {
     if(mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder){
       return
@@ -271,6 +325,7 @@
   }
   const avatarDragStart = (ind:DragData, e:DragEv) => {
     e.dataTransfer.setData('text/plain', '');
+    e.dataTransfer.setData('application/x-risu-internal', 'true');
     currentDrag = ind
     const avatar = e.currentTarget.querySelector('.avatar')
     if(avatar){
@@ -419,6 +474,17 @@
           PlaygroundStore.set(1)
         }}
       ><ShellIcon /></BarIcon>
+      {#each additionalHamburgerMenu as menu}
+        <div class="mt-2"></div>
+        <BarIcon
+          onClick={() => {
+            reseter();
+            menu.callback();
+          }}>
+            <PluginDefinedIcon ico={menu} />
+          </BarIcon
+        >
+      {/each}
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -429,7 +495,7 @@
     </div>
     {/if}
   </div>
-  <div class="flex flex-grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0">
+  <div class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0">
     <div class="h-4 min-h-4 w-14" role="listitem" ondragover={(e) => {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
@@ -473,11 +539,17 @@
             }}
           >
           {#if char.type === 'normal'}
-            <SidebarAvatar src={char.img ? getCharImage(char.img, "plain") : "/none.webp"} size="56" rounded={IconRounded} name={char.name} />
+            <SidebarAvatar 
+              src={char.img ? getCharImage(char.img, "plain") : "/none.webp"} 
+              size="56" 
+              rounded={IconRounded} 
+              name={char.name}
+              chaId={DBState.db.characters[char.index]?.chaId}
+            />
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? getCharImage(char.img, "plain") : ""}
               oncontextmenu={async (e) => {
                 e.preventDefault()
                 const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
@@ -571,15 +643,16 @@
       {#if char.type === 'folder' && openFolders.includes(char.id)}
         {#key char.color}
         <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
-          <div class="absolute top-0 left-1  border border-selected w-full h-full rounded-lg z-0 bg-opacity-20"
-          class:bg-darkbg={char.color === 'default' || char.color === ''}
-          class:bg-red-700={char.color === 'red'}
-          class:bg-yellow-700={char.color === 'yellow'}
-          class:bg-green-700={char.color === 'green'}
-          class:bg-blue-700={char.color === 'blue'}
-          class:bg-indigo-700={char.color === 'indigo'}
-          class:bg-purple-700={char.color === 'purple'}
-          class:bg-pink-700={char.color === 'pink'}></div>
+          <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {
+            char.color === 'red' ? 'bg-red-700/20' :
+            char.color === 'yellow' ? 'bg-yellow-700/20' :
+            char.color === 'green' ? 'bg-green-700/20' :
+            char.color === 'blue' ? 'bg-blue-700/20' :
+            char.color === 'indigo' ? 'bg-indigo-700/20' :
+            char.color === 'purple' ? 'bg-purple-700/20' :
+            char.color === 'pink' ? 'bg-pink-700/20' :
+            'bg-darkbg/20'
+          }"></div>
           <div class="h-4 min-h-4 w-14 relative z-10" role="listitem" ondragover={(e) => {
             e.preventDefault()
             e.dataTransfer.dropEffect = 'move'
@@ -622,7 +695,13 @@
                     }
                   }}
                 >
-                <SidebarAvatar src={char2.img ? getCharImage(char2.img, "plain") : "/none.webp"} size="56" rounded={IconRounded} name={char2.name}/>
+                <SidebarAvatar 
+                  src={char2.img ? getCharImage(char2.img, "plain") : "/none.webp"} 
+                  size="56" 
+                  rounded={IconRounded} 
+                  name={char2.name}
+                  chaId={DBState.db.characters[char2.index]?.chaId}
+                />
               </div>
             </div>
             <div class="h-4 min-h-4 w-14 relative z-20" role="listitem" ondragover={(e) => {
@@ -658,7 +737,7 @@
         }
       }} ondragenter={preventAll}></div>
     {/each}
-    <div class="flex flex-col items-center space-y-2 px-2">
+    <div class="flex flex-col items-center gap-2 px-2">
       <BaseRoundedButton
         onClick={async () => {
           addCharacter({reseter}) 
@@ -742,11 +821,11 @@
         <button onclick={() => {
           devTool = false
           botMakerMode.set(false)
-        }} class="flex-grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
+        }} class="grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
         <button onclick={() => {
           devTool = false
           botMakerMode.set(true)
-        }} class="flex-grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
+        }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
         {#if DBState.db.enableDevTools}
           <button onclick={() => {
             devTool = true
@@ -769,7 +848,7 @@
 </div>
 
 {#if $DynamicGUI}
-    <div role="button" tabindex="0" class="flex-grow h-full min-w-12" class:hidden={hidden} onclick={() => {
+    <div role="button" tabindex="0" class="grow h-full min-w-12" class:hidden={hidden} onclick={() => {
       if($sideBarClosing){
         return
       }

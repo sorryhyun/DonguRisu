@@ -1,7 +1,7 @@
 /**
- * RisuAI Plugin API v3.0 Type Definitions
+ * Risuai Plugin API v3.0 Type Definitions
  *
- * This file provides TypeScript type definitions for the RisuAI Plugin API v3.0.
+ * This file provides TypeScript type definitions for the Risuai Plugin API v3.0.
  * All API methods are accessed through the global `risuai` object.
  *
  * @important **ALL METHODS RETURN PROMISES**
@@ -10,20 +10,78 @@
  * postMessage communication, which makes them asynchronous. Even methods that
  * appear synchronous in the implementation (like log(), showContainer(), etc.)
  * return Promises when called from the plugin iframe.
+ * 
+ * for DOM, we recommend using iframe-based UI which uses standard document API
+ * instead of accessing the main document directly via getRootDocument(),
+ * unless absolutely necessary.
  *
  * **ALWAYS use `await` or `.then()` when calling any risuai method or SafeElement method.**
+ *
+ * ## Plugin Metadata Headers
+ *
+ * All plugins must include metadata comments at the very top of the script file:
+ *
+ * ### Required Metadata
+ *
+ * - **`//@name`** - Internal plugin name (must be unique, avoid changing after publishing)
+ *   ```javascript
+ *   //@name my_plugin
+ *   ```
+ *
+ * - **`//@api`** - API version (use `3.0` for new plugins)
+ *   ```javascript
+ *   //@api 3.0
+ *   ```
+ *
+ * ### Optional Metadata
+ *
+ * - **`//@display-name`** - User-friendly display name (can be changed freely)
+ *   ```javascript
+ *   //@display-name My Awesome Plugin
+ *   ```
+ *
+ * - **`//@arg`** - Define plugin arguments for user configuration
+ *   ```javascript
+ *   //@arg setting_name string Description of the setting
+ *   //@arg max_items int Maximum number of items
+ *   ```
+ *   Supported types: `string`, `int`
+ *   Syntax: `//@arg <name> <type> <description and optional metadata>`
+ *
+ * - **`//@link`** - Add custom links that appear in plugin settings UI
+ *   ```javascript
+ *   //@link https://example.com/docs Documentation
+ *   //@link https://example.com/support Get Support
+ *   ```
+ *
+ * - **`//@update-url`** - URL to check for updates (must support CORS and Range requests)
+ *   ```javascript
+ *   //@update-url https://raw.githubusercontent.com/username/repo/branch/plugin.js
+ *   ```
+ *   Recommended: Use GitHub raw file URLs for automatic update checks
+ *
+ * - **`//@version`** - Plugin version (required for update checks, use Semantic Versioning)
+ *   ```javascript
+ *   //@version 1.0.0
+ *   ```
+ *   Should be placed near the top, ideally below `//@name` and `//@api`
  *
  * @example
  * ```typescript
  * //@name MyPlugin
+ * //@display-name My Awesome Plugin
  * //@api 3.0
+ * //@version 1.0.0
+ * //@arg api_key string Your API key
+ * //@link https://github.com/user/plugin Documentation
+ * //@update-url https://raw.githubusercontent.com/user/repo/main/plugin.js
  *
  * (async () => {
  *   // ALL methods require await
- *   await risuai.log('Plugin initialized');
+ *   await console.log('Plugin initialized');
  *
  *   const character = await risuai.getCharacter();
- *   await risuai.log(`Current character: ${character.name}`);
+ *   await console.log(`Current character: ${character.name}`);
  *
  *   const apiKey = await risuai.getArgument('api_key');
  *
@@ -32,14 +90,6 @@
  *     // Build UI...
  *   }, '⚙️', 'html');
  *
- *   // Even DOM operations require await
- *   const doc = await risuai.getRootDocument();
- *   const element = await doc.querySelector('.chat');
- *   await element.setTextContent('Hello!');
- *
- *   // Storage operations require await
- *   await risuai.pluginStorage.setItem('key', 'value');
- *   const value = await risuai.pluginStorage.getItem('key');
  * })();
  * ```
  */
@@ -51,7 +101,7 @@
 /**
  * OpenAI-format chat message
  */
-export interface OpenAIChat {
+interface OpenAIChat {
     role: 'system' | 'user' | 'assistant' | 'function';
     content: string;
     name?: string;
@@ -62,24 +112,169 @@ export interface OpenAIChat {
 }
 
 /**
+ * Returned response for UI part registration
+ */
+
+interface UIPartResponse {
+    id: string;
+}
+
+/**
  * Container display mode
  */
-export type ContainerMode = 'fullscreen';
+type ContainerMode = 'fullscreen';
 
 /**
  * Icon type for UI elements
  */
-export type IconType = 'html' | 'img' | 'none';
+type IconType = 'html' | 'img' | 'none';
 
 /**
  * Script handler mode
  */
-export type ScriptMode = 'display' | 'output' | 'input' | 'process';
+type ScriptMode = 'display' | 'output' | 'input' | 'process';
 
 /**
  * Replacer type
  */
-export type ReplacerType = 'beforeRequest' | 'afterRequest';
+type ReplacerType = 'beforeRequest' | 'afterRequest';
+
+/**
+ * Risuai Plugin definition
+ */
+interface RisuPlugin {
+    /** Plugin name (identifier) */
+    name: string;
+    /** Display name shown in UI */
+    displayName?: string;
+    /** Plugin script code */
+    script: string;
+    /** Argument type definitions */
+    arguments: { [key: string]: 'int' | 'string' | string[] };
+    /** Actual argument values */
+    realArg: { [key: string]: number | string };
+    /** API version */
+    version?: 1 | 2 | '2.1' | '3.0';
+    /** Custom links for plugin UI */
+    customLink: {
+        link: string;
+        hoverText?: string;
+    }[];
+    /** Argument metadata */
+    argMeta: { [key: string]: {[key: string]: string} };
+    /** Plugin version string */
+    versionOfPlugin?: string;
+    /** Update check URL */
+    updateURL?: string;
+}
+
+/**
+ * Risuai Module definition
+ */
+interface RisuModule {
+    /** Module name */
+    name: string;
+    /** Module description */
+    description: string;
+    /** Lorebook entries */
+    lorebook?: any[];
+    /** Regex scripts */
+    regex?: any[];
+    /** CommonJS code */
+    cjs?: string;
+    /** Trigger scripts */
+    trigger?: any[];
+    /** Module ID */
+    id: string;
+    /** Low level system access */
+    lowLevelAccess?: boolean;
+    /** Hide icon in UI */
+    hideIcon?: boolean;
+    /** Background embedding */
+    backgroundEmbedding?: string;
+    /** Module assets */
+    assets?: [string, string, string][];
+    /** Module namespace */
+    namespace?: string;
+    /** Custom module toggle */
+    customModuleToggle?: string;
+    /** MCP module configuration */
+    mcp?: any;
+}
+
+/**
+ * User persona definition
+ */
+interface Persona {
+    /** Persona prompt/description */
+    personaPrompt: string;
+    /** Persona name */
+    name: string;
+    /** Persona icon */
+    icon: string;
+    /** Use large portrait */
+    largePortrait?: boolean;
+    /** Persona ID */
+    id?: string;
+    /** Persona note */
+    note?: string;
+}
+
+/**
+ * Database subset with limited access to allowed keys only.
+ * Plugins can only access these specific database properties for security.
+ */
+interface DatabaseSubset {
+    /** Array of characters and group chats */
+    characters?: any[];
+    /** Risuai modules */
+    modules?: RisuModule[];
+    /** Enabled module IDs */
+    enabledModules?: string[];
+    /** Module integration settings */
+    moduleIntergration?: string;
+    /** Plugin V2 instances */
+    pluginV2?: RisuPlugin[];
+    /** User personas */
+    personas?: Persona[];
+    /** Plugin instances */
+    plugins?: RisuPlugin[];
+    /** Plugin custom storage object */
+    pluginCustomStorage?: {[key: string]: any};
+    /** AI temperature setting (0-100) */
+    temperature?: number;
+    /** Ask before removing messages */
+    askRemoval?: boolean;
+    /** Maximum context tokens */
+    maxContext?: number;
+    /** Maximum response tokens */
+    maxResponse?: number;
+    /** Frequency penalty (0-100) */
+    frequencyPenalty?: number;
+    /** Presence penalty (0-100) */
+    PresensePenalty?: number;
+    /** UI theme name */
+    theme?: string;
+    /** Text theme name */
+    textTheme?: string;
+    /** Line height setting */
+    lineHeight?: number;
+    /** Use separate models for auxiliary models */
+    seperateModelsForAxModels?: boolean;
+    /** Separate model configurations */
+    seperateModels?: {
+        memory: string;
+        emotion: string;
+        translate: string;
+        otherAx: string;
+    };
+    /** Custom CSS styles */
+    customCSS?: string;
+    /** Custom GUI HTML */
+    guiHTML?: string;
+    /** Color scheme name */
+    colorSchemeName?: string;
+}
 
 // ============================================================================
 // SafeElement API
@@ -102,11 +297,11 @@ export type ReplacerType = 'beforeRequest' | 'afterRequest';
  *
  * // Add event listener
  * const id = await element.addEventListener('click', async () => {
- *   risuai.log('Clicked!');
+ *   console.log('Clicked!');
  * });
  * ```
  */
-export interface SafeElement {
+interface SafeElement {
     // ========== Element Manipulation ==========
 
     /**
@@ -427,7 +622,7 @@ export interface SafeElement {
      * @param options - Event listener options
      * @returns Unique listener ID for later removal
      *
-     * Allowed events (unlimited):
+     * Allowed events (without delay):
      * - Mouse: click, dblclick, contextmenu, mousedown, mouseup, mousemove, mouseover, mouseleave
      * - Pointer: pointercancel, pointerdown, pointerenter, pointerleave, pointermove, pointerout, pointerover, pointerup
      * - Scroll: scroll, scrollend
@@ -435,10 +630,12 @@ export interface SafeElement {
      * Allowed events (with random delay for anti-fingerprinting):
      * - Keyboard: keydown, keyup, keypress
      *
+     * listener function receives trimmed event object with common properties only.
+     * 
      * @example
      * ```typescript
      * const id = await element.addEventListener('click', async (event) => {
-     *   risuai.log('Element clicked!');
+     *   console.log('Element clicked!');
      * });
      *
      * // Later, remove the listener
@@ -462,6 +659,12 @@ export interface SafeElement {
         id: string,
         options?: boolean | EventListenerOptions
     ): Promise<void>;
+
+    /**
+     * Scrolls the element into view
+     * @param options - Scroll options or boolean for alignment
+     */
+    scrollIntoView(options?: boolean | ScrollIntoViewOptions): Promise<void>;
 }
 
 // ============================================================================
@@ -470,8 +673,13 @@ export interface SafeElement {
 
 /**
  * SafeDocument extends SafeElement with document-specific methods.
- * Provides secure access to the main RisuAI document.
+ * Provides secure access to the main Risuai document.
  *
+ * Note that this SHOULD NOT be used unless absolutely necessary.
+ * use other risuai APIs whenever possible, especially using iframe UI
+ * 
+ * Additional restrictions might be added in the future for user safety, including breaking changes.
+ * 
  * @example
  * ```typescript
  * const doc = risuai.getRootDocument();
@@ -484,7 +692,7 @@ export interface SafeElement {
  * const link = doc.createAnchorElement('https://example.com');
  * ```
  */
-export interface SafeDocument extends SafeElement {
+interface SafeDocument extends SafeElement {
     /**
      * Creates an element (limited to whitelisted tags)
      * @param tagName - HTML tag name
@@ -517,53 +725,80 @@ export interface SafeDocument extends SafeElement {
 }
 
 // ============================================================================
+// SafeClassArray
+// ============================================================================
+
+/**
+ * SafeClassArray provides array-like access to collections with restricted operations.
+ * This class is used for safe transfer of arrays of SafeElements or other classes.
+ * All methods are asynchronous unlike standard arrays.
+ *
+ * @example
+ * ```typescript
+ * 
+ * const safeArray = mySafeArray //provided from some API
+ * 
+ * // We recommend using helper function unwarpSafeArray and handle it
+ * const array = await risuai.unwarpSafeArray(safeArray);
+ * for(const item of array){
+ *  console.log(item);
+ * }
+ * 
+ * // You can still use the SafeClassArray methods directly though
+ * const length = await safeArray.length();
+ * for(let i = 0; i < length; i++){
+ *   const item = await safeArray.at(i);
+ *   console.log(item);
+ * }
+ * 
+ * ```
+ */
+interface SafeClassArray<T> {
+    /**
+     * Gets an item at a specific index
+     * @param index - Array index (supports negative indexing)
+     * @returns Item at index or undefined
+     */
+    at(index: number): Promise<T | undefined>;
+
+    /**
+     * Gets the length of the array
+     * @returns Number of items in array
+     */
+    length(): Promise<number>;
+
+    /**
+     * Adds an item to the end of the array
+     * @param item - Item to add
+     */
+    push(item: T): Promise<void>;
+}
+
+// ============================================================================
 // SafeMutationObserver
 // ============================================================================
 
 /**
  * Mutation record from SafeMutationObserver
  */
-export interface SafeMutationRecord {
+interface SafeMutationRecord {
     /** Type of mutation */
-    type: string;
-    /** Target element that was modified */
-    target: SafeElement;
-    /** Array of added SafeElements */
-    addedNodes: SafeElement[];
-    /** Array of removed SafeElements */
-    removedNodes?: SafeElement[];
+    getType(): Promise<string>;
+    /** Target element of mutation */
+    getTarget(): Promise<SafeElement>;
+    /** Added nodes in mutation */
+    getAddedNodes(): Promise<SafeClassArray<SafeElement>>;
 }
 
 /**
  * Callback for SafeMutationObserver
  */
-export type SafeMutationCallback = (mutations: SafeMutationRecord[]) => void;
+type SafeMutationCallback = (mutations: SafeClassArray<SafeMutationRecord>) => void;
 
 /**
  * SafeMutationObserver watches for DOM changes in the main document
- *
- * @example
- * ```typescript
- * const observer = risuai.createMutationObserver((mutations) => {
- *   mutations.forEach(mutation => {
- *     risuai.log(`Mutation type: ${mutation.type}`);
- *     mutation.addedNodes.forEach(async (node) => {
- *       const text = await node.textContent();
- *       risuai.log(`Node added: ${text}`);
- *     });
- *   });
- * });
- *
- * const doc = risuai.getRootDocument();
- * const body = doc.querySelector('body');
- * observer.observe(body, {
- *   childList: true,
- *   subtree: true,
- *   attributes: true
- * });
- * ```
  */
-export interface SafeMutationObserver {
+interface SafeMutationObserver {
     /**
      * Starts observing an element for changes
      * @param element - SafeElement to observe
@@ -595,7 +830,7 @@ export interface SafeMutationObserver {
  * const keys = await risuai.pluginStorage.keys();
  * ```
  */
-export interface PluginStorage {
+interface PluginStorage {
     /**
      * Gets an item from storage
      * @param key - Storage key
@@ -656,7 +891,7 @@ export interface PluginStorage {
  * const deviceId = await risuai.safeLocalStorage.getItem('device_id');
  * ```
  */
-export interface SafeLocalStorage {
+interface SafeLocalStorage {
     getItem(key: string): Promise<string | null>;
     setItem(key: string, value: string): Promise<void>;
     removeItem(key: string): Promise<void>;
@@ -672,7 +907,7 @@ export interface SafeLocalStorage {
 /**
  * Arguments passed to custom AI providers
  */
-export interface ProviderArguments {
+interface ProviderArguments {
     /** Chat message history */
     prompt_chat: OpenAIChat[];
     /** Temperature setting */
@@ -698,7 +933,7 @@ export interface ProviderArguments {
 /**
  * Provider response
  */
-export interface ProviderResponse {
+interface ProviderResponse {
     /** Whether the request was successful */
     success: boolean;
     /** Generated content (string or stream) */
@@ -708,7 +943,7 @@ export interface ProviderResponse {
 /**
  * Provider function type
  */
-export type ProviderFunction = (
+type ProviderFunction = (
     args: ProviderArguments,
     abortSignal?: AbortSignal
 ) => Promise<ProviderResponse>;
@@ -716,7 +951,7 @@ export type ProviderFunction = (
 /**
  * Provider options
  */
-export interface ProviderOptions {
+interface ProviderOptions {
     /** Tokenizer name (e.g., 'gpt-4') */
     tokenizer?: string;
     /** Custom tokenizer function */
@@ -724,18 +959,18 @@ export interface ProviderOptions {
 }
 
 // ============================================================================
-// RisuAI Global API
+// Risuai Global API
 // ============================================================================
 
 /**
- * RisuAI Plugin API v3.0
+ * Risuai Plugin API v3.0
  *
  * All methods are accessed through the global `risuai` object.
  *
  * @important All methods are asynchronous unless otherwise noted.
  * Always use `await` or `.then()` when calling API methods.
  */
-export interface RisuaiPluginAPI {
+interface RisuaiPluginAPI {
     // ========== Version Information ==========
 
     /** API version string */
@@ -748,13 +983,14 @@ export interface RisuaiPluginAPI {
 
     /**
      * Logs a message with plugin identification
+     * @deprecated Use console.log() instead
      * @param message - Message to log
      * @returns Promise that resolves when log is complete
      *
      * @example
      * ```typescript
-     * await risuai.log('Plugin initialized');
-     * // Output: [RisuAI Plugin: YourPlugin] Plugin initialized
+     * await console.log('Plugin initialized');
+     * // Output: [Risuai Plugin: YourPlugin] Plugin initialized
      * ```
      */
     log(message: string): Promise<void>;
@@ -786,7 +1022,7 @@ export interface RisuaiPluginAPI {
 
     /**
      * Gets the root document for safe DOM access
-     * @returns Promise resolving to SafeDocument for the main RisuAI document
+     * @returns Promise resolving to SafeDocument for the main Risuai document
      *
      * @example
      * ```typescript
@@ -812,7 +1048,7 @@ export interface RisuaiPluginAPI {
      * @example
      * ```typescript
      * const char = await risuai.getCharacter();
-     * risuai.log(`Current character: ${char.name}`);
+     * console.log(`Current character: ${char.name}`);
      * ```
      */
     getCharacter(): Promise<any>;
@@ -882,35 +1118,40 @@ export interface RisuaiPluginAPI {
 
     /**
      * Gets the database with limited access
-     * @returns Database object (limited to allowed keys)
+     * @returns DatabaseSubset object (limited to allowed keys) or null if consent not given
      *
      * Allowed keys: characters, modules, enabledModules, moduleIntergration,
-     * pluginV2, personas, plugins, pluginCustomStorage
+     * pluginV2, personas, plugins, pluginCustomStorage, temperature, askRemoval,
+     * maxContext, maxResponse, frequencyPenalty, PresensePenalty, theme,
+     * textTheme, lineHeight, seperateModelsForAxModels, seperateModels,
+     * customCSS, guiHTML, colorSchemeName, characterOrder, selectedPersona
      *
      * @example
      * ```typescript
      * const db = await risuai.getDatabase();
-     * console.log(db.characters);
+     * if(db) {
+     *   console.log(db.characters);
+     * }
      * ```
      */
-    getDatabase(): Promise<any>;
+    getDatabase(): Promise<DatabaseSubset|null>;
 
     /**
      * Sets the database (lightweight save)
-     * @param db - Database object to save
+     * @param db - DatabaseSubset object to save
      */
-    setDatabaseLite(db: any): Promise<void>;
+    setDatabaseLite(db: DatabaseSubset): Promise<void>;
 
     /**
      * Sets the database (full save with sync)
-     * @param db - Database object to save
+     * @param db - DatabaseSubset object to save
      */
-    setDatabase(db: any): Promise<void>;
+    setDatabase(db: DatabaseSubset): Promise<void>;
 
     // ========== Network APIs ==========
 
     /**
-     * Makes a native fetch request (bypasses RisuAI networking)
+     * Makes a native fetch request (bypasses Risuai networking)
      * @param url - Request URL
      * @param options - Fetch options
      * @returns Response promise
@@ -944,34 +1185,42 @@ export interface RisuaiPluginAPI {
         callback: () => void | Promise<void>,
         icon?: string,
         iconType?: IconType
-    ): Promise<void>;
+    ): Promise<UIPartResponse>;
+
 
     /**
      * Registers a floating action button
      * @param name - Display name
+     * @param arg - Button configuration
+     * @param arg.icon - Icon content (HTML or image URL)
+     * @param arg.iconType - Icon type ('html', 'img', or 'none')
+     * @param arg.location - Button location ('action', 'chat', or 'hamburger')
      * @param callback - Callback function when clicked
-     * @param icon - Icon content (HTML or image URL)
-     * @param iconType - Icon type ('html', 'img', or 'none')
      *
      * @example
      * ```typescript
-     * await risuai.registerActionButton(
-     *   'Quick Action',
-     *   async () => {
-     *     const char = await risuai.getCharacter();
-     *     risuai.log(`Character: ${char.name}`);
-     *   },
-     *   '🚀',
-     *   'html'
-     * );
+     * await risuai.registerButton({
+     *   name: 'My Action',
+     *   icon: '🔥',
+     *   iconType: 'html',
+     *   location: 'action'
+     * }, async () => {
+     *     console.log('Action button clicked!');
+     * });
      * ```
      */
-    registerActionButton(
+    registerButton(arg:  {
         name: string,
-        callback: () => void | Promise<void>,
-        icon?: string,
-        iconType?: IconType
-    ): Promise<void>;
+        icon: string,
+        iconType: 'html'|'img'|'none',
+        location?: 'action'|'chat'|'hamburger'
+    }, callback: () => void): Promise<UIPartResponse>;
+
+    /**
+     * Unregisters a UI part
+     * @param id - UI part ID returned during registration
+     */
+    unregisterUIPart(id: string): Promise<void>;
 
     // ========== Provider APIs ==========
 
@@ -986,7 +1235,7 @@ export interface RisuaiPluginAPI {
      * await risuai.addProvider(
      *   'MyProvider',
      *   async (args, abortSignal) => {
-     *     const response = await risuai.risuFetch('https://api.example.com/chat', {
+     *     const response = await risuai.nativeFetch('https://api.example.com/chat', {
      *       method: 'POST',
      *       body: JSON.stringify({
      *         messages: args.prompt_chat,
@@ -1114,16 +1363,51 @@ export interface RisuaiPluginAPI {
     loadPlugins(): Promise<void>;
 
     /**
-     * @deprecated Cleanup only happens on shutdown
+     * Registers an unload function called when plugin is unloaded
      */
     onUnload(func: () => void | Promise<void>): Promise<void>;
 
-    // ========== Internal Methods ==========
+    /**
+     * Gets the fetch logs
+     * @returns Array of fetch log entries or null if consent not given
+    */
+    getFetchLogs(): Promise<{
+        url: string;
+        body: string;
+        status?: number;
+        response?: string;
+        error?: string;
+        timestamp: number;
+    }[]|null>;
 
     /**
-     * @internal Gets old API keys (for debugging/compatibility)
+     * Checks and corrects character order in the database
      */
-    _getOldKeys(): Promise<string[]>;
+    checkCharOrder(): Promise<void>;
+
+    /**
+     * Gets runtime information about Risuai environment
+     * @returns Object containing apiVersion, platform, and saveMethod
+     */
+    getRuntimeInfo(): Promise<{
+        apiVersion: string;
+        platform: string;
+        saveMethod: string;
+    }>
+
+    /**
+     * Requests permission for a specific action
+     * @param permission - Permission string (e.g. 'fetchLogs'|'db'|'mainDom')
+     * @returns True if permission granted, false otherwise
+     */
+    requestPluginPermission(permission: string): Promise<boolean>;
+
+    /**
+     * Unwraps a SafeClassArray into a standard array
+     * @param safeArray - The SafeClassArray to unwrap
+     * @returns Standard array of items
+     */
+    unwarpSafeArray<T>(safeArray: SafeClassArray<T>): Promise<T[]>;
 }
 
 // ============================================================================
@@ -1131,10 +1415,11 @@ export interface RisuaiPluginAPI {
 // ============================================================================
 
 /**
- * Global RisuAI API object available in all plugins
+ * Global Risuai API object available in all plugins
  */
-declare global {
-    const risuai: RisuaiPluginAPI;
-}
+declare const risuai: RisuaiPluginAPI;
 
-export {};
+/**
+ * Global Risuai API object available in all plugins, alias for `risuai`
+ */
+declare const Risuai: RisuaiPluginAPI;

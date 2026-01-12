@@ -66,6 +66,8 @@ export type matcherArg = {
     lowLevelAccess?: boolean
     cbsConditions: CbsConditions
     triggerId?: string
+    getNested?: () => string[]
+    setNestedRoot?: (val:string) => void
 }
 "a".toLowerCase().split('::')
 
@@ -91,10 +93,10 @@ export type CBSRegisterArg = {
     getUserName: () => string,
     getPersonaPrompt: () => string,
     risuChatParser: (text: string, arg: matcherArg) => string,
-    makeArray: (arr: string[]) => string,
+    makeArray: (arr: unknown[]) => string,
     safeStructuredClone: <T>(obj: T) => T,
-    parseArray: (str: string) => string[],
-    parseDict: (str: string) => {[key: string]: string},
+    parseArray: (str: string) => unknown[],
+    parseDict: (str: string) => {[key: string]: unknown},
     getChatVar: (key: string) => string,
     setChatVar: (key: string, value: string) => void,
     getGlobalChatVar: (key: string) => string,
@@ -857,7 +859,7 @@ export function registerCBS(arg:CBSRegisterArg) {
             return `<img src="/logo2.png" style="height:${size}px;width:${size}px" />`
         },
         alias: [],
-        description: 'Displays the RisuAI logo image with specified size in pixels. Default size is 45px if no argument provided. Returns HTML img element.\n\nUsage:: {{risu}} or {{risu::60}}',
+        description: 'Displays the Risuai logo image with specified size in pixels. Default size is 45px if no argument provided. Returns HTML img element.\n\nUsage:: {{risu}} or {{risu::60}}',
     });
 
     // Comparison functions
@@ -1133,7 +1135,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'tonumber',
         callback: (str, matcherArg, args, vars) => {
-            return (args[0].split('').filter((v) => {
+            return ([...args[0]].filter((v) => {
                 return !isNaN(Number(v)) || v === '.'
             })).join('')
         },
@@ -1153,7 +1155,8 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'arrayelement',
         callback: (str, matcherArg, args, vars) => {
-            return parseArray(args[0]).at(Number(args[1])) ?? 'null'
+            const element = parseArray(args[0]).at(Number(args[1])) ?? 'null'
+            return typeof element === 'object' ? JSON.stringify(element) : String(element)
         },
         alias: ['arrayelement'],
         description: 'Retrieves the element at the specified index from a JSON array. Uses 0-based indexing. Returns "null" if index is out of bounds.\n\nUsage:: {{arrayelement::["a","b","c"]::1}} → b',
@@ -1162,7 +1165,8 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'dictelement',
         callback: (str, matcherArg, args, vars) => {
-            return parseDict(args[0])[args[1]] ?? 'null'
+            const element = parseDict(args[0])[args[1]] ?? 'null'
+            return typeof element === 'object' ? JSON.stringify(element) : String(element)
         },
         alias: ['dictelement', 'objectelement'],
         description: 'Retrieves the value associated with a key from a JSON object/dictionary. Returns "null" if key doesn\'t exist.\n\nUsage:: {{dictelement::{"name":"John"}::name}} → John',
@@ -1629,7 +1633,7 @@ export function registerCBS(arg:CBSRegisterArg) {
                     case 1:
                         return f !== ''
                     case 2:
-                        return i === array.indexOf(f)               
+                        return i === array.indexOf(f)
                 }
             }))
         },
@@ -1970,34 +1974,34 @@ export function registerCBS(arg:CBSRegisterArg) {
         description: 'Applies Caesar cipher encryption/decryption with custom shift value (default 32768). Shifts Unicode character codes within 16-bit range. By using default shift, it can be used for both encryption and decryption.\n\nUsage:: {{crypt::hello}} or {{crypt::hello::1000}}',
     });
 
+    /**
+     * @param rand 0-1 random value from PRNG
+     */
+    const randomPickImpl = (str: string, matcherArg: matcherArg, args: string[], rand: number): string => {
+        if (args.length === 0) {
+            return rand.toString()
+        }
+
+        let arr: unknown[]
+        if (args.length === 1) {
+            if (args[0].startsWith('[') && args[0].endsWith(']')) {
+                arr = parseArray(args[0])
+            } else {
+                arr = args[0].replace(/\\,/g, '§X').split(/\:|\,/g)
+            }
+        } else {
+            arr = args
+        }
+
+        const index = matcherArg.tokenizeAccurate ? 0 : Math.floor(rand * arr.length)
+        const element = arr[index]
+        return typeof element === 'string' ? element.replace(/§X/g, ',') : JSON.stringify(element) ?? ''
+    }
+
     registerFunction({
         name: 'random',
         callback: (str, matcherArg, args, vars) => {
-
-            if(args.length === 0){
-                return Math.random().toString()
-            }
-            if(args.length === 1){
-                let arr:string[]
-                
-                if(str.startsWith('[') && str.endsWith(']')){
-                    arr = parseArray(str)
-                }
-                else{
-                    arr = args[0].replace(/\\,/g, '§X').split(/\:|\,/g)
-                }
-                const randomIndex = Math.floor(Math.random() * arr.length)
-                if(matcherArg.tokenizeAccurate){
-                    return arr[0]
-                }
-                return arr[randomIndex]?.replace(/§X/g, ',') ?? ''
-            }
-
-            const randomIndex = Math.floor(Math.random() * args.length)
-            if(matcherArg.tokenizeAccurate){
-                return args[0]
-            }
-            return args[randomIndex]
+            return randomPickImpl(str, matcherArg, args, Math.random())
         },
         alias: [],
         description: 'Returns a random number between 0 and 1 if no arguments. With one argument, returns a random element from the provided array or string split by commas/colons. With multiple arguments, returns a random argument.\n\nUsage:: {{random}} or {{random::a,b,c}} → "b"',
@@ -2006,37 +2010,12 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'pick',
         callback: (str, matcherArg, args, vars) => {
-
             const db = getDatabase()
             const selchar = db.characters[getSelectedCharID()]
             const selChat = selchar.chats[selchar.chatPage]
             const cid = selChat.message.length
             const hashRand = pickHashRand(cid, selchar.chaId + (selChat.id ?? ''))
-            
-            if(args.length === 0){
-                return hashRand.toString()
-            }
-            if(args.length === 1){
-                let arr:string[]
-                
-                if(str.startsWith('[') && str.endsWith(']')){
-                    arr = parseArray(str)
-                }
-                else{
-                    arr = args[0].replace(/\\,/g, '§X').split(/\:|\,/g)
-                }
-                const randomIndex = Math.floor(hashRand * arr.length)
-                if(matcherArg.tokenizeAccurate){
-                    return arr[0]
-                }
-                return arr[randomIndex]?.replace(/§X/g, ',') ?? ''
-            }
-
-            const randomIndex = Math.floor(hashRand * args.length)
-            if(matcherArg.tokenizeAccurate){
-                return args[0]
-            }
-            return args[randomIndex]
+            return randomPickImpl(str, matcherArg, args, hashRand)
         },
         alias: [],
         description: 'Returns a random number between 0 and 1 if no arguments. With one argument, returns a random element from the provided array or string split by commas/colons. With multiple arguments, returns a random argument. unlike {{random}}, uses a hash-based randomization based on chat ID and character ID for consistent results across messages.\n\nUsage:: {{pick}} or {{pick::a,b,c}} → "b"',
@@ -2118,7 +2097,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'reverse',
         callback: (str, matcherArg, args, vars) => {
-            return str.split('').reverse().join('')
+            return [...str].reverse().join('')
         },
         alias: [],
         description: 'Reverses the input string.\n\nUsage:: {{reverse::some_value}}',
@@ -2171,6 +2150,75 @@ export function registerCBS(arg:CBSRegisterArg) {
         },
         alias: [],
         description: 'Formats text as a code block using HTML pre and code tags.\n\nUsage:: {{codeblock::some code here}}, or {{codeblock::language::some code here}} for syntax highlighting.',
+    })
+
+    
+    registerFunction({
+        name: 'bkspc',
+        callback: (str, matcherArg, args, vars) => {
+            let root = matcherArg?.getNested?.()?.[0]
+            if(!root){
+                return ''
+            }
+            root = root.trimEnd()
+
+            let trimPointer = root.length - 1
+
+            for(;trimPointer >= 0;trimPointer--){
+                const char = root[trimPointer]
+                if(trimPointer === 0){
+                    break
+                }
+                if(char === ' ' || char === '\n' || char === '\t'){
+                    break
+                }
+            }
+
+            if(trimPointer === -1){
+                trimPointer = 0
+            }
+            
+            matcherArg?.setNestedRoot(root.substring(0, trimPointer).trimEnd())
+            return ''
+        },
+        alias: [],
+        description: "Performs a backspace operation, removing the last word from the current output. Useful for correcting or modifying generated text dynamically.\n\nUsage:: hello world {{bkspc}} user → hello user",
+    })
+
+    registerFunction({
+        name: 'erase',
+        callback: (str, matcherArg, args, vars) => {
+            let root = matcherArg?.getNested?.()?.[0]
+            if(!root){
+                return ''
+            }
+            root = root.trimEnd()
+
+            let trimPointer = root.length - 1
+            let sentenceEndFound = false
+
+            for(;trimPointer >= 0;trimPointer--){
+                const char = root[trimPointer]
+                if(char === '.' || char === '!' || char === '?' || char === '\n'){
+                    sentenceEndFound = true
+                    break
+                }
+                if(trimPointer === 0){
+                    break
+                }
+            }
+
+            if(trimPointer === -1){
+                trimPointer = 0
+            }
+            else if(sentenceEndFound){
+                trimPointer += 1
+            }
+            matcherArg?.setNestedRoot(root.substring(0, trimPointer).trimEnd())
+            return ''
+        },
+        alias: [],
+        description: "performs a backspace operation, removing the last sentence from the current output. Useful for correcting or modifying generated text dynamically.\n\nUsage:: hello world. what's in {{erase}} what's up → hello world. what's up",
     })
 
     registerFunction({
@@ -2342,10 +2390,10 @@ Advanced operators:
 {{#when::legacy::A}}...{{/when}} - legacy whitespace handling, so it will handle like deprecated #if.
 {{#when::var::A}}...{{/when}} - checks if variable A is truthy.
 {{#when::A::vis::B}}...{{/when}} - checks if variable A is equal to literal B.
-{{#when::A::vnotis::B}}...{{/when}} - checks if variable A is not equal to literal B.
+{{#when::A::visnot::B}}...{{/when}} - checks if variable A is not equal to literal B.
 {{#when::toggle::togglename}}...{{/when}} - checks if toggle is enabled.
 {{#when::A::tis::B}}...{{/when}} - checks if toggle A is equal to literal B.
-{{#when::A::tnotis::B}}...{{/when}} - checks if toggle A is not equal to literal B.
+{{#when::A::tisnot::B}}...{{/when}} - checks if toggle A is not equal to literal B.
 
 operators can be combined like:
 {{#when::keep::not::condition}}...{{/when}}
@@ -2383,10 +2431,15 @@ Usage:: {{#when condition}}...{{/when}} or {{#when::not::condition}}...{{/when}}
     })
 
     registerFunction({
-        name:':each',
+        name:'#each',
         callback: 'doc_only',
-        alias: ['#each'],
-        description: 'Iterates over an array or object.\n\nUsage:: {{#each array}}...{{/each}} or {{#each object as key}}... {{slot::key}}...{{/each}}',
+        alias: [':each'],
+        description: `Iterates over an array.
+
+Operators:
+{{#each::keep A as V}} - keep whitespace handling, so it will not trim spaces inside block.
+
+Usage:: {{#each A as V}} ... {{slot::V}} ... {{/each}}`,
     })
 
     registerFunction({
@@ -2402,6 +2455,4 @@ Usage:: {{#when condition}}...{{/when}} or {{#when::not::condition}}...{{/when}}
         alias: [],
         description: 'Defines the position which can be used in various features such as @@position <positionName> decorator.\n\nUsage:: {{position::positionName}}',
     })
-
-
 }

@@ -1,15 +1,39 @@
-import { fetchNative, globalFetch } from "src/ts/globalApi.svelte";
-import { getV2PluginAPIs, type RisuPlugin } from "../plugins";
+import { allowedDbKeys, getV2PluginAPIs, type RisuPlugin } from "../plugins";
 import { SandboxHost } from "./factory";
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { tagWhitelist } from "../pluginSafeClass";
 import DOMPurify from 'dompurify';
-import { additionalFloatingActionButtons, additionalSettingsMenu } from "src/ts/stores.svelte";
+import { additionalChatMenu, additionalFloatingActionButtons, additionalHamburgerMenu, additionalSettingsMenu, type MenuDef } from "src/ts/stores.svelte";
 import { v4 } from "uuid";
+import { sleep } from "src/ts/util";
+import { alertConfirm, alertError, alertNormal } from "src/ts/alert";
+import { language } from "src/lang";
+import { checkCharOrder, forageStorage, getFetchLogs } from "src/ts/globalApi.svelte";
+import { isNodeServer, isTauri } from "src/ts/platform";
+
+/*
+    V3 API for RisuAI Plugins
+
+    Before adding new APIs here, please check the limitations
+
+    - APIs must be a functions
+        - If you want nested objects, first add as a plain function, `_getPluginStorage` for example
+            And add it too _getAliases function ({'pluginStorage':{'getItem': '_getPluginStorage', ... }})
+            This will make pluginStorage.getItem() work in plugins
+        - If you need constants, use _getPropertiesForInitialization to set them up
+            For example apiVersion and apiVersionCompatibleWith are set this way,
+            Accessable in plugins as risuai.apiVersion
+    - APIs must return, or accept as parameters, only the following types:
+        - Serializable data (string, number, boolean, null, array, object)
+        - Class instances marked with __classType = 'REMOTE_REQUIRED'
+        - Callback functions (only as parameters)
+        - Note that Class or Callbacks inside arrays or objects are not supported
+*/
 
 
 class SafeElement {
     #element: HTMLElement;
+    __classType = 'REMOTE_REQUIRED' as const;
 
     constructor(element: HTMLElement) {
         if(element.getAttribute('freezed')){
@@ -187,7 +211,9 @@ class SafeElement {
         const san = DOMPurify.sanitize(value);
         this.#element.outerHTML = san;
     }
-
+    public scrollIntoView(options?: boolean | ScrollIntoViewOptions) {
+        this.#element.scrollIntoView(options);
+    }
     #eventIdMap = new Map<string, Function>()
 
     public async addEventListener(type:string, listener: (event: any) => void, options?: boolean | AddEventListenerOptions):Promise<string> {
@@ -225,32 +251,67 @@ class SafeElement {
 
         const id = v4()
 
+        const trimEvent = (event: MouseEvent | KeyboardEvent | Event) => {
+            if(event instanceof MouseEvent){
+                return {
+                    type: event.type,
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                    button: event.button,
+                    buttons: event.buttons,
+                    altKey: event.altKey,
+                    ctrlKey: event.ctrlKey,
+                    shiftKey: event.shiftKey,
+                    metaKey: event.metaKey,
+                }
+            }
+            else if(event instanceof KeyboardEvent){
+                return {
+                    type: event.type,
+                    key: event.key,
+                    code: event.code,
+                    altKey: event.altKey,
+                    ctrlKey: event.ctrlKey,
+                    shiftKey: event.shiftKey,
+                    metaKey: event.metaKey,
+                }
+            }
+            else{
+                return {
+                    type: event.type
+                }
+            }
+
+        }
+
         if(allowedDocumentEventListeners.includes(type)){
             const modifiedListener = (event: any) => {
-                listener(event)
+                listener(trimEvent(event))
             }
             this.#eventIdMap.set(id, modifiedListener)
             document.addEventListener(type, modifiedListener, realOptions)
+            return id;
         }
         else if(allowedDelayedEventListeners.includes(type)){
             const modifiedListener = (event: any) => {
                 let delay = 0;
                 try {
-                    delay = crypto.getRandomValues(new Uint32Array(1))[0];                    
+                    delay = (crypto.getRandomValues(new Uint32Array(1))[0] / 100) % 100; //0-99 ms              
                 } catch (error) {}
                 setTimeout(() => {
-                    listener(event);
+                    listener(trimEvent(event));
                 }, delay);
             }
             this.#eventIdMap.set(id, modifiedListener)
             document.addEventListener(type, modifiedListener, realOptions);
+            return id;
         }
-
-        throw new Error(`Event listener of type '${type}' is not allowed for security reasons.`);
-        
+        else{
+            throw new Error(`Event listener of type '${type}' is not allowed for security reasons.`);
+        }        
     }
 
-    removeEventListener(type:string, id:string, options?: boolean | EventListenerOptions) {
+    public removeEventListener(type:string, id:string, options?: boolean | EventListenerOptions) {
         const listener = this.#eventIdMap.get(id);
         if(listener){
             const realOptions = typeof options === 'boolean' ? { capture: options } : options || {};
@@ -259,12 +320,13 @@ class SafeElement {
         }
     }
 
-    matches: (selector: string) => boolean = (selector: string) => {
+    public matches (selector: string): boolean {
         return this.#element.matches(selector);
     }
 }
 
 class SafeDocument extends SafeElement {
+    __classType = 'REMOTE_REQUIRED' as const;
     constructor(document: Document) {
         super(document.documentElement);
     }
@@ -295,19 +357,58 @@ class SafeDocument extends SafeElement {
     }
 }
 
-type SafeMutationRecord = {
+type SafeMutationRecordObject = {
     type: string;
     target: SafeElement;
     addedNodes: SafeElement[];
 }
 
-type SafeMutationCallback = (mutations: SafeMutationRecord[]) => void;
+class SafeClassArray<T> {
+    #items: T[];
+    __classType = 'REMOTE_REQUIRED' as const;
+    constructor(items: T[] = []) {
+        this.#items = items;
+    }
+    at(index: number): T {
+        return this.#items.at(index);
+    }
+    length(): number {
+        return this.#items.length;
+    }
+    push(item: T) {
+        this.#items.push(item);
+    }
+}
+
+class SafeMutationRecord{
+    __classType = 'REMOTE_REQUIRED' as const;
+    #type: string;
+    #target: SafeElement;
+    #addedNodes: SafeClassArray<SafeElement>;
+    constructor(type: string, target: SafeElement, addedNodes: SafeElement[]) {
+        this.#type = type;
+        this.#target = target;
+        this.#addedNodes = new SafeClassArray<SafeElement>(addedNodes);
+    }
+    getType(): string {
+        return this.#type;
+    }
+    getTarget(): SafeElement {
+        return this.#target;
+    }
+    getAddedNodes(): SafeClassArray<SafeElement> {
+        return this.#addedNodes;
+    }
+}
+
+type SafeMutationCallback = (mutations: SafeClassArray<SafeMutationRecord>) => void;
 
 class SafeMutationObserver {
     #observer: MutationObserver;
+    __classType = 'REMOTE_REQUIRED' as const;
     constructor(callback: SafeMutationCallback) {
         this.#observer = new MutationObserver((mutations) => {
-            const safeMutations: SafeMutationRecord[] = mutations.map(mutation => {
+            const safeMutations: SafeMutationRecordObject[] = mutations.map(mutation => {
 
                 const elementMapHelper = (nodeList: NodeList): SafeElement[] => {
                     const elements: SafeElement[] = [];
@@ -328,7 +429,15 @@ class SafeMutationObserver {
                 }
             })
 
-            callback(safeMutations);
+            const safeClassed = new SafeClassArray<SafeMutationRecord>([]);
+            for(const record of safeMutations){
+                safeClassed.push(new SafeMutationRecord(
+                    record.type,
+                    record.target,
+                    record.addedNodes
+                ));
+            }
+            callback(safeClassed);
         });
     }
 
@@ -344,8 +453,75 @@ class SafeMutationObserver {
 
 }
 
+const pluginUnloadCallbacks: Map<string, Function[]> = new Map();
+
+const addPluginUnloadCallback = (pluginName: string, callback: Function) => {
+    if(!pluginUnloadCallbacks.has(pluginName)){
+        pluginUnloadCallbacks.set(pluginName, []);
+    }
+    pluginUnloadCallbacks.get(pluginName)?.push(callback);
+}
+
+const makeMenuUnloadCallback = (menuId:string, menuStore: MenuDef[]) =>{
+    return () => {
+        const index = menuStore.findIndex(item => item.id === menuId);
+        if(index !== -1){
+            menuStore.splice(index, 1);
+        }
+    }
+}
+
+const unloadV3Plugin = async (pluginName: string) => {
+    const callbacks = pluginUnloadCallbacks.get(pluginName);
+    const instance = v3PluginInstances.find(p => p.name === pluginName);
+    if(instance){
+        const index = v3PluginInstances.findIndex(p => p.name === pluginName);
+        if(index !== -1){
+            v3PluginInstances.splice(index, 1);
+        }
+    }
+    if(callbacks){
+        pluginUnloadCallbacks.delete(pluginName); 
+        let promises: Promise<void>[] = [];
+        for(const callback of callbacks){
+            const result = callback();
+            if(result instanceof Promise){
+                promises.push(result);
+            }
+        }
+
+        await Promise.any([
+            Promise.all(promises),
+            sleep(1000) //timeout after 1 second
+        ])
+    }
+    instance.host.terminate();
+}
+
+const permissionGivenPlugins: Set<string> = new Set();
+
+const getPluginPermission = async (pluginName: string, permissionDesc: 'fetchLogs'|'db'|'mainDom') => {
+    if(permissionGivenPlugins.has(pluginName)){
+        return true;
+    }
+    let alertTitle =
+        permissionDesc === 'fetchLogs' ? language.fetchLogConsent.replace("{}", pluginName)
+        : permissionDesc === 'db' ? language.getFullDatabaseConsent.replace("{}", pluginName)
+        : permissionDesc === 'mainDom' ? language.mainDomAccessConsent.replace("{}", pluginName)
+        : `Error`
+    if(alertTitle === 'Error'){
+        return false;
+    }
+    const conf = await alertConfirm(alertTitle)
+    if(conf){
+        permissionGivenPlugins.add(pluginName);
+        return true;
+    }
+    return false;
+}
+
 const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
-    
+
     const oldApis = getV2PluginAPIs();
     return {
 
@@ -359,24 +535,30 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
         removeRisuScriptHandler: oldApis.removeRisuScriptHandler,
         addRisuReplacer: oldApis.addRisuReplacer,
         removeRisuReplacer: oldApis.removeRisuReplacer,
-        safeLocalStorage: oldApis.safeLocalStorage,
-        apiVersion: "3.0",
-        apiVersionCompatibleWith: ["3.0"],
-        getDatabase: oldApis.getDatabase,
-        pluginStorage: oldApis.pluginStorage,
         setDatabaseLite: oldApis.setDatabaseLite,
         setDatabase: oldApis.setDatabase,
         loadPlugins: oldApis.loadPlugins,
         readImage: oldApis.readImage,
         saveAsset: oldApis.saveAsset,
+
+        //Same functionality, but new implementation
+        getDatabase: async () => {
+            const conf = await getPluginPermission(plugin.name, 'db');
+            if(!conf){
+                return null;
+            }
+            const db = getDatabase({
+                snapshot: true
+            });
+            let liteDB = {}
+            for(const key of allowedDbKeys){
+                (liteDB as any)[key] = (db as any)[key];
+            }
+            return liteDB;
+        },
+
         
-
-
         //Deprecated APIs from v2.1
-
-        //Unload never fires. plugin cleanup is handled only on program shutdown now.
-        onUnload: oldApis.onUnload,
-
         //Use getArgument / setArgument instead if possible
         getArg: oldApis.getArg,
         setArg: oldApis.setArg,
@@ -434,7 +616,11 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
         hideContainer: () => {
             iframe.style.display = "none";
         },
-        getRootDocument: () => {
+        getRootDocument: async () => {
+            const conf = await getPluginPermission(plugin.name, 'mainDom');
+            if(!conf){
+                return null;
+            }
             return new SafeDocument(document);
         },
         registerSetting: (
@@ -449,29 +635,93 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             if(typeof name !== 'string' || name.trim() === ''){
                 throw new Error("name must be a non-empty string");
             }
+            const id = v4()
             additionalSettingsMenu.push({
+                id,
                 name,
                 icon,
                 iconType,
                 callback
             })
+            addPluginUnloadCallback(
+                plugin.name,
+                makeMenuUnloadCallback(id, additionalSettingsMenu)
+            )
+            return {id:id};
         },
-        registerActionButton: (
-            name:string,
-            callback: any,
-            icon:string = '',
-            iconType:'html'|'img'|'none' = 'none'
+        registerButton: (
+            arg: {
+                name: string,
+                icon: string,
+                iconType: 'html'|'img'|'none',
+                location?: 'action'|'chat'|'hamburger'
+            },
+            callback: () => void
         ) => {
+            let { name, icon, iconType, location } = arg;
+            location = location || 'action';
             //Reserved for future use
             if(iconType !== 'html' && iconType !== 'img' && iconType !== 'none'){
                 throw new Error("iconType must be 'html', 'img' or 'none'");
             }
-            additionalFloatingActionButtons.push({
+            if(typeof name !== 'string' || name.trim() === ''){
+                throw new Error("name must be a non-empty string");
+            }
+            if(typeof icon !== 'string'){
+                throw new Error("icon must be a string");
+            }
+            const id = v4()
+            const menuDef:MenuDef = {
                 name,
                 icon,
                 iconType,
-                callback
-            })
+                callback,
+                id
+            }
+
+            switch(location){
+                case 'action':{
+                    additionalFloatingActionButtons.push(menuDef)
+                    addPluginUnloadCallback(
+                        plugin.name,
+                        makeMenuUnloadCallback(menuDef.id, additionalFloatingActionButtons)
+                    )
+                    break
+                }
+                case 'hamburger':{
+                    additionalHamburgerMenu.push(menuDef)
+                    addPluginUnloadCallback(
+                        plugin.name,
+                        makeMenuUnloadCallback(menuDef.id, additionalHamburgerMenu)
+                    )
+                    break
+                }
+                case 'chat':{
+                    additionalChatMenu.push(menuDef)
+                    addPluginUnloadCallback(
+                        plugin.name,
+                        makeMenuUnloadCallback(menuDef.id, additionalChatMenu)
+                    )
+                    break
+                }
+                default:{
+                    throw new Error("Invalid location for button")
+                }
+            }
+            return {id:id};
+        },
+        unregisterUIPart: (id: string) => {
+            const removeFromMenuStore = (menuStore: MenuDef[]) => {
+                const index = menuStore.findIndex(item => item.id === id);
+                if(index !== -1){
+                    menuStore.splice(index, 1);
+                }
+            }
+
+            removeFromMenuStore(additionalSettingsMenu);
+            removeFromMenuStore(additionalFloatingActionButtons);
+            removeFromMenuStore(additionalHamburgerMenu);
+            removeFromMenuStore(additionalChatMenu);
         },
         log: (message:string) => {
             console.log(`[RisuAI Plugin: ${plugin.name}] ${message}`);
@@ -479,22 +729,146 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
         createMutationObserver(callback: SafeMutationCallback): SafeMutationObserver {
             return new SafeMutationObserver(callback)
         },
+        onUnload: (callback: () => void) => {
+            addPluginUnloadCallback(plugin.name, callback);
+        },
+        getFetchLogs: async () => {
+            const unsafeFetchLog = getFetchLogs()
+            const conf = await getPluginPermission(plugin.name, 'fetchLogs');
+            if(!conf){
+                return null;
+            }
+            return unsafeFetchLog.map(log => {
+
+                const url = new URL(log.url);
+                return {
+                    url: url.origin + url.pathname,
+                    body: log.body,
+                    status: log.status,
+                    response: log.response,
+                }
+            })
+        },
+
+        alert: (msg:string) => {
+            return alertNormal(msg)
+        },
+        alertConfirm: (msg:string) => {
+            return alertConfirm(msg)
+        },
+        alertError: (msg:string) => {
+            return alertError(msg)
+        },
+        getRuntimeInfo: () => {
+            return {
+                apiVersion: "3.0",
+                platform: 
+                    isNodeServer ? 'node' :
+                    isTauri ? 'tauri' :
+                    'web',
+                saveMethod:
+                    isTauri ? 'tauri' :
+                    forageStorage.isAccount ? 'account' :
+                    'local',
+            }
+        },
+        checkCharOrder: checkCharOrder,
+        requestPluginPermission: (permission:string) => {
+            return getPluginPermission(plugin.name, permission as any);
+        },
+        //Internal use APIs
         _getOldKeys: () => {
             return Object.keys(oldApis)
+        },
+        _getPropertiesForInitialization: () => {
+            const v = {
+                apiVersion: "3.0",
+                apiVersionCompatibleWith: ["3.0"],
+            } as any;
+
+            v.list = Object.keys(v);
+            
+            return v;
+        },
+        _getPluginStorage: oldApis.pluginStorage.getItem,
+        _setPluginStorage: oldApis.pluginStorage.setItem,
+        _removePluginStorage: oldApis.pluginStorage.removeItem,
+        _clearPluginStorage: oldApis.pluginStorage.clear,
+        _keyPluginStorage: oldApis.pluginStorage.key,
+        _keysPluginStorage: oldApis.pluginStorage.keys,
+        _lengthPluginStorage: oldApis.pluginStorage.length,
+        _getSafeLocalStorage: oldApis.safeLocalStorage.getItem,
+        _setSafeLocalStorage: oldApis.safeLocalStorage.setItem,
+        _removeSafeLocalStorage: oldApis.safeLocalStorage.removeItem,
+        _clearSafeLocalStorage: oldApis.safeLocalStorage.clear,
+        _keySafeLocalStorage: oldApis.safeLocalStorage.key,
+        _keysSafeLocalStorage: oldApis.safeLocalStorage.keys,
+        _getAliases: () => {
+            return {
+                'pluginStorage':{
+                    'getItem': '_getPluginStorage',
+                    'setItem': '_setPluginStorage',
+                    'removeItem': '_removePluginStorage',
+                    'clear': '_clearPluginStorage',
+                    'key': '_keyPluginStorage',
+                    'keys': '_keysPluginStorage',
+                    'length': '_lengthPluginStorage',
+                },
+                'safeLocalStorage':{
+                    'getItem': '_getSafeLocalStorage',
+                    'setItem': '_setSafeLocalStorage',
+                    'removeItem': '_removeSafeLocalStorage',
+                    'clear': '_clearSafeLocalStorage',
+                    'key': '_keySafeLocalStorage',
+                    'keys': '_keysSafeLocalStorage',
+                }
+            }
         }
     }
 }
 
+type V3PluginInstance = {
+    name: string;
+    host: SandboxHost;
+}
+
+const v3PluginInstances: V3PluginInstance[] = [];
+
 export async function loadV3Plugins(plugins:RisuPlugin[]){
+    await Promise.all(v3PluginInstances.map(async (instance) => {
+        await unloadV3Plugin(instance.name);
+    }));
     const loadPromises = plugins.map(plugin => executePluginV3(plugin));
     await Promise.all(loadPromises);
 }
 
 export async function executePluginV3(plugin:RisuPlugin){
+
+    const alreadyRunning = v3PluginInstances.find(p => p.name === plugin.name);
+    if(alreadyRunning){
+        console.log(`[RisuAI Plugin: ${plugin.name}] Plugin is already running. Skipping load.`);
+        return;
+    }
+
     const iframe = document.createElement('iframe');
     iframe.style.display = "none";
     document.body.appendChild(iframe);
     const host = new SandboxHost(makeRisuaiAPIV3(iframe, plugin));
+    v3PluginInstances.push({
+        name: plugin.name,
+        host
+    });
     host.run(iframe, plugin.script);
     console.log(`[RisuAI Plugin: ${plugin.name}] Loaded API V3 plugin.`);
 }
+
+export function getV3PluginInstance(name: string) {
+    return v3PluginInstances.find(p => p.name === name);
+}
+
+globalThis.__debugV3Plugin = (code: string|Function) => {
+    if(code instanceof Function){
+        code = `(${code.toString()})()`;
+    }
+    return v3PluginInstances[0].host.executeInIframe(code);
+};

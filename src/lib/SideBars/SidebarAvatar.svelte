@@ -9,11 +9,12 @@
     onClick?: any;
     bordered?: boolean;
     color?: string;
-    backgroundimg?: string;
+    backgroundimg?: string|Promise<string>;
     children?: import('svelte').Snippet;
     oncontextmenu?: (event: MouseEvent & {
         currentTarget: EventTarget & HTMLDivElement;
     }) => any
+    chaId?: string;
   }
 
   let {
@@ -26,7 +27,8 @@
     color = '',
     backgroundimg = '',
     children,
-    oncontextmenu
+    oncontextmenu,
+    chaId
   }: Props = $props();
 </script>
 
@@ -39,33 +41,52 @@
       onclick={onClick} use:tooltipRight={name}
       role="button"
       tabindex="0"
+      data-char-id={chaId}
 >
   {#if src}
     {#if src === "slot"}
+      {#await backgroundimg}
       <div
-        class="bg-skin-border sidebar-avatar rounded-md bg-top flex items-center justify-center bg-opacity-50"
-        class:bg-darkbg={color === 'default' || color === ''}
-        class:bg-red-700={color === 'red'}
-        class:bg-yellow-700={color === 'yellow'}
-        class:bg-green-700={color === 'green'}
-        class:bg-blue-700={color === 'blue'}
-        class:bg-indigo-700={color === 'indigo'}
-        class:bg-purple-700={color === 'purple'}
-        class:bg-pink-700={color === 'pink'}
-
-
+        class="bg-skin-border sidebar-avatar rounded-md bg-top flex items-center justify-center {
+          color === 'red' ? 'bg-red-700/50' :
+          color === 'yellow' ? 'bg-yellow-700/50' :
+          color === 'green' ? 'bg-green-700/50' :
+          color === 'blue' ? 'bg-blue-700/50' :
+          color === 'indigo' ? 'bg-indigo-700/50' :
+          color === 'purple' ? 'bg-purple-700/50' :
+          color === 'pink' ? 'bg-pink-700/50' :
+          'bg-darkbg/50'
+        }"
         style:width={size + "px"}
         style:height={size + "px"}
         style:minWidth={size + "px"}
-        style:background-image={backgroundimg ? `url('${backgroundimg}')` : undefined}
-        style:background-size={backgroundimg ? "cover" : undefined}
-        style:background-position={backgroundimg ? "center" : undefined}
-        class:rounded-md={!rounded} class:rounded-full={rounded} 
+        class:rounded-md={!rounded} class:rounded-full={rounded}
+      ></div>
+      {:then resolvedBgImg}
+      <div
+        class="bg-skin-border sidebar-avatar rounded-md bg-top flex items-center justify-center {
+          color === 'red' ? 'bg-red-700/50' :
+          color === 'yellow' ? 'bg-yellow-700/50' :
+          color === 'green' ? 'bg-green-700/50' :
+          color === 'blue' ? 'bg-blue-700/50' :
+          color === 'indigo' ? 'bg-indigo-700/50' :
+          color === 'purple' ? 'bg-purple-700/50' :
+          color === 'pink' ? 'bg-pink-700/50' :
+          'bg-darkbg/50'
+        }"
+        style:width={size + "px"}
+        style:height={size + "px"}
+        style:minWidth={size + "px"}
+        style:background-image={resolvedBgImg ? `url('${resolvedBgImg}')` : undefined}
+        style:background-size={resolvedBgImg ? "cover" : undefined}
+        style:background-position={resolvedBgImg ? "center" : undefined}
+        class:rounded-md={!rounded} class:rounded-full={rounded}
       >
-      {#if !backgroundimg}
+      {#if !resolvedBgImg}
         {@render children?.()}
       {/if}
-    </div>
+        </div>
+    {/await}
     {:else}
       {#await src}
         <div

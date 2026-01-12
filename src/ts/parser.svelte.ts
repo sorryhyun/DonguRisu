@@ -1,22 +1,22 @@
 import DOMPurify from 'dompurify';
 import markdownit from 'markdown-it'
-import { appVer, getCurrentCharacter, getDatabase, type Database, type Message, type character, type customscript, type groupChat, type loreBook, type triggerscript } from './storage/database.svelte';
+import { appVer, getCurrentCharacter, getDatabase, type Database, type character, type customscript, type groupChat, type triggerscript } from './storage/database.svelte';
 import { DBState } from './stores.svelte';
-import { aiLawApplies, aiWatermarkingLawApplies, getFileSrc, isMobile, isNodeServer, isTauri } from './globalApi.svelte';
+import { aiWatermarkingLawApplies, getFileSrc } from './globalApi.svelte';
+import { isTauri, isNodeServer } from "src/ts/platform"
 import { processScriptFull } from './process/scripts';
 import { get } from 'svelte/store';
 import css, { type CssAtRuleAST } from '@adobe/css-tools'
-import { SizeStore, selectedCharID } from './stores.svelte';
+import { selectedCharID } from './stores.svelte';
 import { calcString } from './process/infunctions';
 import { findCharacterbyId, getPersonaPrompt, getUserIcon, getUserName, parseKeyValue, pickHashRand, replaceAsync} from './util';
-import { getInlayAsset, getInlayAssetBlob } from './process/files/inlays';
-import { getModuleAssets, getModuleLorebooks, getModules, type RisuModule } from './process/modules';
-import type { OpenAIChat } from './process/index.svelte';
+import { getInlayAssetBlob } from './process/files/inlays';
+import { getModuleAssets, getModuleLorebooks, getModules } from './process/modules';
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
 import { language } from 'src/lang';
 import katex from 'katex'
-import { getModelInfo, type LLMModel } from './model/modellist';
+import { getModelInfo } from './model/modellist';
 import { registerCBS, type matcherArg, type RegisterCallback } from './cbs';
 
 const markdownItOptions = {
@@ -49,6 +49,17 @@ DOMPurify.addHook("uponSanitizeElement", (node: HTMLElement, data) => {
        }
     }
     if(data.tagName === 'img'){
+        // Hide external images when hideAllImages is enabled
+        if(DBState.db?.hideAllImages){
+            const src = node.getAttribute("src") || "";
+            // Replace with placeholder if it's an external/loaded image
+            if(src && !src.startsWith('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP')){
+                node.setAttribute("src", "/none.webp");
+                node.setAttribute("alt", "?");
+            }
+            return;
+        }
+        
         const loading = node.getAttribute("loading")
         if(!loading){
             node.setAttribute("loading","lazy")
@@ -57,14 +68,19 @@ DOMPurify.addHook("uponSanitizeElement", (node: HTMLElement, data) => {
         if(!decoding){
             node.setAttribute("decoding", "async")
         }
-
-        const src = node.getAttribute("src") || "";
     }
 });
 
 DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
     switch(data.attrName){
         case 'style':{
+            // Remove background-image URLs when hideAllImages is enabled
+            if(DBState.db?.hideAllImages && data.attrValue){
+                // Remove background-image property from inline styles
+                data.attrValue = data.attrValue.replace(/background(-image)?:\s*url\([^)]*\);?/gi, '')
+                // Also remove background property if it contains url()
+                data.attrValue = data.attrValue.replace(/background:\s*[^;]*url\([^)]*\)[^;]*;?/gi, '')
+            }
             break
         }
         case 'class':{
@@ -147,13 +163,11 @@ function renderMarkdown(md:markdownit, data:string){
                 .replace(/\uE9b9/gu, '}')
                 .replace(/\uE9ba/gu, '(')
                 .replace(/\uE9bb/gu, ')')
-            console.log(content)
             const rendered = katex.renderToString(content, {
                 displayMode: false,
                 throwOnError: true,
                 output: 'mathml'
             })
-            console.log('KaTeX rendered:', rendered)
             return rendered
         } catch (error) {
             console.error('KaTeX render error:', error)
@@ -378,59 +392,78 @@ async function renderHighlightableMarkdown(data:string) {
 
 export const assetRegex = /{{(raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::(.+?)}}/gms
 
-async function getAssetSrc(assetArr: string[][], name: string, assetPaths: {[key: string]:{path: string[], ext?: string}}) {
-    console.log("getAssetSrc")
+function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths) {
     for (const asset of assetArr) {
-        if (trimmer(asset[0].toLocaleLowerCase()) !== trimmer(name)) continue
-        const assetPath = await getFileSrc(asset[1])
         const key = asset[0].toLocaleLowerCase()
         assetPaths[key] ??= {
-            path: [],
+            srcPaths: [],
             ext: asset[2]
         }
         if(assetPaths[key].ext === asset[2]){
-            assetPaths[key].path.push(assetPath)
+            assetPaths[key].srcPaths.push(asset[1])
         }
     }
 }
 
-async function getEmoSrc(emoArr: string[][], emoPaths: {[key: string]:{path: string}}) {
+function getEmoSrc(emoArr: string[][], emoPaths: AssetPaths) {
     for (const emo of emoArr) {
-        const emoPath = await getFileSrc(emo[1])
         emoPaths[emo[0].toLocaleLowerCase()] = {
-            path: emoPath,
+            srcPaths: [emo[1]]
         }
     }
 }
+
+const fileSrcCache = new Map<string, string>()
+async function getFileSrcCached(path:string){
+    let cached = fileSrcCache.get(path)
+    if(cached){
+        return cached
+    }
+    const src = await getFileSrc(path)
+    fileSrcCache.set(path, src)
+    return src
+}
+
+type AssetPaths = {[key:string]:{
+    srcPaths:string[]
+    ext?:string
+}}
 
 async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|character, mode:'normal'|'back', arg:{ch:number}){
     const assetWidthString = (DBState.db.assetWidth && DBState.db.assetWidth !== -1 || DBState.db.assetWidth === 0) ? `max-width:${DBState.db.assetWidth}rem;` : ''
 
-    let assetPaths:{[key:string]:{
-        path:string[]
-        ext?:string
-    }} = {}
-    let emoPaths:{[key:string]:{
-        path:string
-    }} = {}
+    let assetPaths:AssetPaths = {}
+    let emoPaths:AssetPaths = {}
 
-    if (char.emotionImages) await getEmoSrc(char.emotionImages, emoPaths)
+    if (char.emotionImages) getEmoSrc(char.emotionImages, emoPaths)
 
     const videoExtention = ['mp4', 'webm', 'avi', 'm4p', 'm4v']
     let needsSourceAccess = false
 
+    const moduleAssets = getModuleAssets()
+
+    if (char.additionalAssets) {
+        getAssetSrc(char.additionalAssets, assetPaths)
+    }
+    if (moduleAssets.length > 0) {
+        getAssetSrc(moduleAssets, assetPaths)
+    }
+
+    let cx:number|null = null
+
     data = await replaceAsync(data, assetRegex, async (full:string, type:string, name:string) => {
         name = name.toLocaleLowerCase()
-        const moduleAssets = getModuleAssets()
-        if (char.additionalAssets) {
-            await getAssetSrc(char.additionalAssets, name, assetPaths)
-        }
-        if (moduleAssets.length > 0) {
-            await getAssetSrc(moduleAssets, name, assetPaths)
+
+        // Skip image-related assets when hideAllImages is enabled
+        // raw and path are also included as they're used in CSS background-image
+        const imageTypes = ['img', 'image', 'emotion', 'asset', 'bg', 'raw', 'path']
+        if(DBState.db.hideAllImages && imageTypes.includes(type)){
+            return ''  // Hide the image asset
         }
 
         if(type === 'emotion'){
-            const path = emoPaths[name]?.path
+            const srcPath = emoPaths[name]?.srcPaths?.[0]
+            const path = srcPath ? await getFileSrcCached(srcPath) : null
             if(!path){
                 return ''
             }
@@ -449,26 +482,32 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
             }
         }
 
-        let path = assetPaths[name]
+        let match = assetPaths[name]
 
-        if(!path){
+        if(!match){
             if(DBState.db.legacyMediaFindings){
                 return ''
             }
 
-            path = await getClosestMatch(char, name, assetPaths)
+            match = getClosestMatch(char, name, assetPaths)
 
-            if(!path){
+            if(!match){
                 return ''
             }
         }
 
-        let p = path.path[0]
+        let pSrc = match.srcPaths[0]
 
-        if(path.path.length > 1){
-            console.log('Multiple assets found for', name, path.path, arg.ch)
-            p = path.path[Math.floor(arg.ch % p.length)]
+        if(match.srcPaths.length > 1){
+            if(cx === null){
+                const chatID = arg.ch
+                cx = pickHashRand(chatID, (char.chaId || 'global') + chatID)
+            }
+            const selIndex = Math.floor(cx * match.srcPaths.length)
+            pSrc = match.srcPaths[selIndex]
         }
+
+        const p = await getFileSrcCached(pSrc)
         switch(type){
             case 'raw':
             case 'path':
@@ -489,7 +528,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
                 }
                 break
             case 'asset':{
-                if(path.ext && videoExtention.includes(path.ext)){
+                if(match.ext && videoExtention.includes(match.ext)){
                     return `<video autoplay muted loop><source src="${p}" type="video/mp4"></video>\n`
                 }
                 return `<img src="${p}" alt="${p}" style="${assetWidthString} "/>\n`
@@ -515,7 +554,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
     return data
 }
 
-async function getClosestMatch(char: simpleCharacterArgument|character, name:string, assetPaths:{[key:string]:{path:string[], ext?:string}}){   
+function getClosestMatch(char: simpleCharacterArgument|character, name:string, assetPaths:AssetPaths){   
     if(!char.additionalAssets) return null
 
     let closest = ''
@@ -539,9 +578,8 @@ async function getClosestMatch(char: simpleCharacterArgument|character, name:str
         return null
     }
 
-    const assetPath = await getFileSrc(targetPath)
     assetPaths[closest] = {
-        path: [assetPath],
+        srcPaths: [targetPath],
         ext: targetExt
     }
 
@@ -600,6 +638,11 @@ async function parseInlayAssets(data:string){
             } 
             switch(asset?.type){
                 case 'image':
+                    // Hide inlay images when hideAllImages is enabled
+                    if(DBState.db.hideAllImages){
+                        data = data.replace(inlay, '')
+                        break
+                    }
                     data = data.replace(inlay, `${prefix}<img src="${url}"/>${postfix}`)
                     break
                 case 'video':
@@ -628,11 +671,11 @@ export interface simpleCharacterArgument{
 function parseThoughtsAndTools(data:string){
     let result = '', i = 0
     while (i < data.length) {
-        if (data.substr(i, 10) === '<Thoughts>') {
+        if (data.slice(i, i + 10) === '<Thoughts>') {
             let j = i + 10, depth = 1
             while (j < data.length && depth > 0) {
-                if (data.substr(j, 10) === '<Thoughts>') depth++
-                if (data.substr(j, 11) === '</Thoughts>') depth--
+                if (data.slice(j, j + 10) === '<Thoughts>') depth++
+                if (data.slice(j, j + 11) === '</Thoughts>') depth--
                 j++
             }
             if (depth === 0) {
@@ -698,10 +741,6 @@ export function trimMarkdown(data:string){
     }))
 }
 
-const placeToPutMetadata = new Set([
-    ' ', '\n'
-])
-
 const metaCodes = [
     '\u200B', //zero width space
     '\u200C', //zero width non-joiner
@@ -729,15 +768,27 @@ export function addMetadataToElement(data:string, modelShortName:string){
             switch(byte.charAt(j)){
                 case '0':{
                     encodedMetaCode += metaCodes[0]
+                    break
                 }
                 case '1':{
                     encodedMetaCode += metaCodes[1]
+                    break
                 }
                 case '2':{
                     encodedMetaCode += metaCodes[2]
+                    break
                 }
                 case '3':{
                     encodedMetaCode += metaCodes[3]
+                    break
+                }
+                case '4':{
+                    encodedMetaCode += metaCodes[4]
+                    break
+                }
+                case '5':{
+                    encodedMetaCode += metaCodes[5]
+                    break
                 }
             }
         }
@@ -925,47 +976,6 @@ export function checkImageType(arr:Uint8Array):ImageType {
     return "Unknown";
 }
 
-function wppParser(data:string){
-    const lines = data.split('\n');
-    let characterDetails:{[key:string]:string[]} = {};
-
-    lines.forEach(line => {
-
-        // Check for "{" and "}" indicator of object start and end
-        if(line.includes('{')) return;
-        if(line.includes('}')) return;
-
-        // Extract key and value within brackets
-        let keyBracketStartIndex = line.indexOf('(');
-        let keyBracketEndIndex = line.indexOf(')');
-    
-       if(keyBracketStartIndex === -1 || keyBracketEndIndex === -1) 
-            throw new Error(`Invalid syntax ${line}`);
-        
-       let key = line.substring(0, keyBracketStartIndex).trim();
-
-         // Validate Key    
-         if(!key) throw new Error(`Missing Key in ${line}`);
-
-      const valueArray=line.substring(keyBracketStartIndex + 1, keyBracketEndIndex)
-          .split(',')
-          .map(str => str.trim());
-      
-      // Validate Values
-      for(let i=0;i<valueArray.length ;i++){
-           if(!valueArray[i])
-               throw new Error(`Empty Value in ${line}`);
-              
-     }
-      characterDetails[key] = valueArray;
-   });
-
-   return characterDetails;
-}
-
-
-const rgx = /(?:{{|<)(.+?)(?:}}|>)/gm
-
 export type CbsConditions = {
     firstmsg?:boolean
     chatRole?:string
@@ -1089,43 +1099,6 @@ const dateTimeFormat = (main:string, time = 0) => {
 
 }
 
-const smMatcher = (p1:string,matcherArg:matcherArg) => {
-    if(!p1){
-        return null
-    }
-    const lowerCased = p1.toLocaleLowerCase()
-    const db = matcherArg.db
-    const chara = matcherArg.chara
-    switch(lowerCased){
-        case 'char':
-        case 'bot':{
-            if(matcherArg.consistantChar){
-                return 'botname'
-            }
-            let selectedChar = get(selectedCharID)
-            let currentChar = db.characters[selectedChar]
-            if(currentChar && currentChar.type !== 'group'){
-                return currentChar.nickname || currentChar.name
-            }
-            if(chara){
-                if(typeof(chara) === 'string'){
-                    return chara
-                }
-                else{
-                    return chara.name
-                }
-            }
-            return currentChar.nickname || currentChar.name
-        }
-        case 'user':{
-            if(matcherArg.consistantChar){
-                return 'username'
-            }
-            return getUserName()
-        }
-    }
-}
-
 const legacyBlockMatcher = (p1:string,matcherArg:matcherArg) => {
     const bn = p1.indexOf('\n')
 
@@ -1152,7 +1125,7 @@ const legacyBlockMatcher = (p1:string,matcherArg:matcherArg) => {
 
 type blockMatch = 'ignore'|'parse'|'nothing'|'ifpure'|'pure'|'each'|'function'|'pure-display'|'normalize'|'escape'|'newif'|'newif-falsy'
 
-function parseArray(p1:string):string[]{
+function parseArray(p1:string): unknown[]{
     try {
         const arr = JSON.parse(p1)
         if(Array.isArray(arr)){
@@ -1164,7 +1137,7 @@ function parseArray(p1:string):string[]{
     }
 }
 
-function parseDict(p1:string):{[key:string]:string}{
+function parseDict(p1 :string): {[key:string]: unknown}{
     try {
         return JSON.parse(p1)
     } catch (error) {
@@ -1172,7 +1145,7 @@ function parseDict(p1:string):{[key:string]:string}{
     }
 }
 
-function makeArray(p1:string[]):string{
+function makeArray(p1: unknown[]): string{
     return JSON.stringify(p1.map((f) => {
         if(typeof(f) === 'string'){
             return f.replace(/::/g, '\\u003A\\u003A')
@@ -1181,7 +1154,7 @@ function makeArray(p1:string[]):string{
     }))
 }
 
-function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,type2?:string,funcArg?:string[]}{
+function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,type2?:string,funcArg?:string[],mode?:string}{
     if(p1.startsWith('#if') || p1.startsWith('#if_pure ')){
         const statement = p1.split(' ', 2)
         const state = statement[1]
@@ -1226,10 +1199,12 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                     }
                     case 'keep':{
                         mode = 'keep'
+                        statement.push(condition)
                         break
                     }
                     case 'legacy':{
                         mode = 'legacy'
+                        statement.push(condition)
                         break
                     }
                     case 'and':{
@@ -1310,10 +1285,10 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                         else{
                             statement.push('0')
                         }
+                        break
                     }
                     case 'tis':{ //tis = toggle is
                         const variable = getGlobalChatVar('toggle_' + statement.pop())
-                        console.log('tis', variable, condition)
                         if(variable === condition){
                             statement.push('1')
                         }
@@ -1334,7 +1309,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                     }
                     case '>':{
                         const condition2 = statement.pop()
-                        if(parseFloat(condition) > parseFloat(condition2)){
+                        if(parseFloat(condition2) > parseFloat(condition)){
                             statement.push('1')
                         }
                         else{
@@ -1344,7 +1319,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                     }
                     case '<':{
                         const condition2 = statement.pop()
-                        if(parseFloat(condition) < parseFloat(condition2)){
+                        if(parseFloat(condition2) < parseFloat(condition)){
                             statement.push('1')
                         }
                         else{
@@ -1354,7 +1329,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                     }
                     case '>=':{
                         const condition2 = statement.pop()
-                        if(parseFloat(condition) >= parseFloat(condition2)){
+                        if(parseFloat(condition2) >= parseFloat(condition)){
                             statement.push('1')
                         }
                         else{
@@ -1364,7 +1339,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                     }
                     case '<=':{
                         const condition2 = statement.pop()
-                        if(parseFloat(condition) <= parseFloat(condition2)){
+                        if(parseFloat(condition2) <= parseFloat(condition)){
                             statement.push('1')
                         }
                         else{
@@ -1430,10 +1405,15 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
     }
     if(p1.startsWith('#each')){
         let t2 = p1.substring(5).trim()
+        let mode: string | undefined
+        if(t2.startsWith('::keep ')){
+            mode = 'keep'
+            t2 = t2.substring(7).trim()
+        }
         if(t2.startsWith('as ')){
             t2 = t2.substring(3).trim()
         }
-        return {type:'each',type2:t2}
+        return {type:'each', type2:t2, mode}
     }
     if(p1.startsWith('#func')){
         const statement = p1.split(' ')
@@ -1442,7 +1422,6 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
         }
 
     }
-
 
     return {type:'nothing'}
 }
@@ -1453,7 +1432,7 @@ function trimLines(p1:string){
     }).join('\n').trim()
 }
 
-function blockEndMatcher(p1:string,type:{type:blockMatch,type2?:string},matcherArg:matcherArg):string{
+function blockEndMatcher(p1:string,type:{type:blockMatch,type2?:string,mode?:string},matcherArg:matcherArg):string{
     const p1Trimed = p1.trim() 
     switch(type.type){
         case 'pure':
@@ -1461,8 +1440,13 @@ function blockEndMatcher(p1:string,type:{type:blockMatch,type2?:string},matcherA
         case 'function':{
             return p1Trimed
         }
-        case 'parse':
+        case 'parse':{
+            return trimLines(p1Trimed)
+        }
         case 'each':{
+            if(type.mode === 'keep'){
+                return p1
+            }
             return trimLines(p1Trimed)
         }
         case 'ifpure':{
@@ -1572,7 +1556,6 @@ export function risuChatParser(da:string, arg:{
     const chatID = arg.chatID ?? -1
     const db = arg.db ?? DBState.db
     const aChara = arg.chara
-    const visualize = arg.visualize ?? false
     let chara:character|string = null
 
     if(aChara){
@@ -1599,7 +1582,6 @@ export function risuChatParser(da:string, arg:{
         }
     }
 
-    
     let pointer = 0;
     let nested:string[] = [""]
     let stackType = new Uint8Array(512)
@@ -1609,6 +1591,7 @@ export function risuChatParser(da:string, arg:{
         type:blockMatch,
         type2?:string
         funcArg?:string[]
+        mode?:string
     }> = new Map()
     let commentMode = false
     let commentLatest:string[] = [""]
@@ -1639,6 +1622,12 @@ export function risuChatParser(da:string, arg:{
         consistantChar: arg.consistantChar ?? false,
         cbsConditions: arg.cbsConditions ?? {},
         callStack: arg.callStack,
+        getNested: () => {
+            return nested
+        },
+        setNestedRoot: (val:string) => {
+            nested[0] = val
+        }
     }
 
     da = da.replace(/\<(user|char|bot)\>/gi, '{{$1}}')
@@ -1646,12 +1635,7 @@ export function risuChatParser(da:string, arg:{
     const isPureMode = () => {
         return pureModeNest.size > 0
     }
-    const pureModeType = () => {
-        if(pureModeNest.size === 0){
-            return ''
-        }
-        return pureModeNestType.get(nested.length) ?? [...pureModeNestType.values()].at(-1) ?? ''
-    }
+
     while(pointer < da.length){
         switch(da[pointer]){
             case '{':{
@@ -1723,15 +1707,23 @@ export function risuChatParser(da:string, arg:{
                         const dat2 = nested.shift()
                         const matchResult = blockEndMatcher(dat2, blockType, matcherObj)
                         if(blockType.type === 'each'){
-                            const subind = blockType.type2.lastIndexOf(' ')
-                            const sub = blockType.type2.substring(subind + 1)
-                            const array = parseArray(blockType.type2.substring(0, subind))
-                            let added = ''
-                            for(let i = 0;i < array.length;i++){
-                                const res = matchResult.replaceAll(`{{slot::${sub}}}`, array[i])
-                                added += res
+                            const asIndex = blockType.type2.lastIndexOf(' as ')
+                            let sub = blockType.type2.substring(asIndex + 4).trim()
+                            let array = parseArray(blockType.type2.substring(0, asIndex))
+                            if(asIndex === -1){
+                                //compability mode
+                                const subind = blockType.type2.lastIndexOf(' ')
+                                if(subind === -1){
+                                    break
+                                }
+                                sub = blockType.type2.substring(subind + 1)
+                                array = parseArray(blockType.type2.substring(0, subind))
                             }
-                            da = da.substring(0, pointer + 1) + added.trim() + da.substring(pointer + 1)
+                            let added = ''
+                            for(let i = 0; i < array.length; i++) {
+                                added += matchResult.replaceAll(`{{slot::${sub}}}`, typeof(array[i]) === 'string' ? array[i] as string : JSON.stringify(array[i]))
+                            }
+                            da = da.substring(0, pointer + 1) + (blockType.mode === 'keep' ? added : added.trim()) + da.substring(pointer + 1)
                             break
                         }
                         if(blockType.type === 'function'){
@@ -1787,8 +1779,8 @@ export function risuChatParser(da:string, arg:{
                 else{
                     nested[0] += mc.text
                     tempVar = mc.var
-                    if(tempVar?.['__force_return__']){
-                        return tempVar?.['__return__'] ?? 'null'
+                    if(tempVar['__force_return__']){
+                        return tempVar['__return__'] ?? 'null'
                     }
                 }
                 break
@@ -1860,70 +1852,6 @@ export function setChatVar(key:string, value:string){
     DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage].scriptstate['$' + key] = value
 }
 
-
-async function editDisplay(text){
-    let rt = ""
-    if(!text.includes("<obs>")){
-        return text
-    }
-
-    for(let i=0;i<text.length;i++){
-        const obfiEffect = "!@#$%^&*"
-        if(Math.random() < 0.4){
-            rt += obfiEffect[Math.floor(Math.random() * obfiEffect.length)]
-        }
-        rt += text[i]
-    }
-    return rt
-}
-
-export type PromptParsed ={[key:string]:string|PromptParsed}
-
-export async function promptTypeParser(prompt:string):Promise<string | PromptParsed>{
-    //XML type
-    try {
-        const parser = new DOMParser()
-        const dom = `<root>${prompt}</root>`
-        const xmlDoc = parser.parseFromString(dom, "text/xml")
-        const root = xmlDoc.documentElement
-
-        const errorNode = root.getElementsByTagName('parsererror')
-
-        if(errorNode.length > 0){
-            throw new Error('XML Parse Error') //fallback to other parser
-        }
-
-        const parseNode = (node:Element):string|PromptParsed => {
-            if(node.children.length === 0){
-                return node.textContent
-            }
-
-            const data:{[key:string]:string|PromptParsed} = {}
-
-            for(let i=0;i<node.children.length;i++){
-                const child = node.children[i]
-                data[child.tagName] = parseNode(child)
-            }
-
-            return data
-        }
-
-        const pnresult = parseNode(root)
-
-        if(typeof(pnresult) === 'string'){
-            throw new Error('XML Parse Error') //fallback to other parser
-        }
-
-        return pnresult
-
-    } catch (error) {
-        
-    }
-
-    return prompt
-}
-
-
 export function applyMarkdownToNode(node: Node) {
     if (node.nodeType === Node.TEXT_NODE) {
         const text = node.textContent;
@@ -1949,64 +1877,4 @@ export function applyMarkdownToNode(node: Node) {
             applyMarkdownToNode(child);
         }
     }
-}
-
-export function parseChatML(data:string):OpenAIChat[]|null{
-
-    const starter = '<|im_start|>'
-    const seperator = '<|im_sep|>'
-    const ender = '<|im_end|>'
-    const trimedData = data.trim()
-    if(!trimedData.startsWith(starter)){
-        return null
-    }
-
-    return trimedData.split(starter).filter((f) => f !== '').map((v) => {
-        let role:'system'|'user'|'assistant' = 'user'
-        //default separators
-        if(v.startsWith('user' + seperator)){
-            role = 'user'
-            v = v.substring(4 + seperator.length)
-        }
-        else if(v.startsWith('system' + seperator)){
-            role = 'system'
-            v = v.substring(6 + seperator.length)
-        }
-        else if(v.startsWith('assistant' + seperator)){
-            role = 'assistant'
-            v = v.substring(9 + seperator.length)
-        }
-        //space/newline separators
-        else if(v.startsWith('user ') || v.startsWith('user\n')){
-            role = 'user'
-            v = v.substring(5)
-        }
-        else if(v.startsWith('system ') || v.startsWith('system\n')){
-            role = 'system'
-            v = v.substring(7)
-        }
-        else if(v.startsWith('assistant ') || v.startsWith('assistant\n')){
-            role = 'assistant'
-            v = v.substring(10)
-        }
-
-        v = v.trim()
-
-        if(v.endsWith(ender)){
-            v = v.substring(0, v.length - ender.length)
-        }
-
-
-        let thoughts:string[] = []
-        v = v.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (match, p1) => {
-            thoughts.push(p1)
-            return ''
-        })
-
-        return {
-            role: role,
-            content: risuChatParser(v),
-            thoughts: thoughts
-        }
-    })
 }

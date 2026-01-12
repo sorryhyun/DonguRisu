@@ -1,27 +1,28 @@
-import { get, writable, type Writable } from "svelte/store"
-import { alertCardExport, alertConfirm, alertError, alertInput, alertMd, alertNormal, alertSelect, alertStore, alertTOS, alertWait } from "./alert"
+import { writable, type Writable } from "svelte/store"
+import { alertCardExport, alertConfirm, alertError, alertInput, alertMd, alertNormal, alertStore, alertTOS, alertWait } from "./alert"
 import { defaultSdDataFunc, type character, setDatabase, type customscript, type loreSettings, type loreBook, type triggerscript, importPreset, type groupChat, setCurrentCharacter, getCurrentCharacter, getDatabase, setDatabaseLite, appVer } from "./storage/database.svelte"
-import { checkNullish, decryptBuffer, encryptBuffer, isKnownUri, selectFileByDom, selectMultipleFile, sleep } from "./util"
+import { checkNullish, decryptBuffer, isKnownUri, selectFileByDom, sleep } from "./util"
 import { language } from "src/lang"
 import { v4 as uuidv4, v4 } from 'uuid';
 import { characterFormatUpdate } from "./characters"
-import { AppendableBuffer, BlankWriter, checkCharOrder, downloadFile, isNodeServer, isTauri, loadAsset, LocalWriter, openURL, readImage, saveAsset, VirtualWriter } from "./globalApi.svelte"
+import { AppendableBuffer, BlankWriter, checkCharOrder, downloadFile, forageStorage, loadAsset, LocalWriter, openURL, readImage, saveAsset, VirtualWriter } from "./globalApi.svelte"
+import { isTauri, isNodeServer, isCapacitor } from "src/ts/platform"
 import { SettingsMenuIndex, ShowRealmFrameStore, selectedCharID, settingsOpen } from "./stores.svelte"
 import { checkImageType, convertImage, hasher } from "./parser.svelte"
-import { CCardLib, type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
+import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from "./process/files/inlays"
 import { PngChunk } from "./pngChunk"
 import type { OnnxModelFiles } from "./process/transformers"
-import { CharXReader, CharXWriter } from "./process/processzip"
-import { Capacitor } from "@capacitor/core"
+import { CharXImporter, CharXSkippableChecker, CharXWriter } from "./process/processzip"
 import { exportModule, readModule, type RisuModule } from "./process/modules"
 import { readFile } from "@tauri-apps/plugin-fs"
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
+import { AccountStorage } from "./storage/accountStorage"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
-export const hubURL = typeof window !== 'undefined' && (window as any).__NODE__ === true
+export const hubURL = isNodeServer
     ? '/hub-proxy'
     : (window.location.hostname === 'nightly.risuai.xyz' || localStorage.getItem('hub') === 'nightly')
     ? NIGHTLY_HUB_URL 
@@ -35,7 +36,6 @@ export async function importCharacter() {
         }
 
         for(const f of files){
-            console.log(f)
             await importCharacterProcess({
                 name: f.name,
                 data: f
@@ -84,11 +84,58 @@ export async function importCharacterProcess(f:{
             type: 'wait',
             msg: 'Loading... (Reading)'
         })
-        const reader = new CharXReader()
-        await reader.read(f.data, {
-            alertInfo: true
-        })
-        const cardData = reader.cardData
+
+        let charXMode:'normal'|'skippable'|'signal' = 'normal'
+        let signal = ''
+        if(forageStorage.realStorage instanceof AccountStorage){
+
+            if(f.data instanceof ReadableStream){
+                const tee = f.data.tee()
+                const reader =tee[0].getReader()
+                f.data = tee[1]
+                const chunks:Uint8Array[] = []
+                let done = false
+                let readedBytes = 0
+                while(!done){
+                    const r = await reader.read()
+                    readedBytes += r.value ? r.value.length : 0
+                    if(r.done){
+                        done = true
+                    }
+                    else{
+                        chunks.push(r.value)
+                    }
+                    alertWait(`Loading... (Reading) ${readedBytes} Bytes`)
+                }
+                let offset = 0
+                const uint8 = new Uint8Array(readedBytes)
+                for(const chunk of chunks){
+                    uint8.set(chunk, offset)
+                    offset += chunk.length
+                }
+                const v = await CharXSkippableChecker(uint8)
+                signal = v.hash
+                charXMode = v.success ? 'skippable' : 'signal'
+            }
+            else{
+                const rsp = new Response(f.data as any)
+                f.data = new Uint8Array(await rsp.arrayBuffer())
+                const v = await CharXSkippableChecker(f.data)
+                signal = v.hash
+                charXMode = v.success ? 'skippable' : 'signal'
+            }
+        }
+        
+        const importer = new CharXImporter()
+        importer.alertInfo = true
+        if(charXMode === 'skippable'){
+            importer.skipSaving = true
+        }
+        if(charXMode === 'signal'){
+            importer.hashSignal = signal
+        }
+        await importer.parse(f.data)
+        const cardData = importer.cardData
         if(!cardData){
             alertError(language.errors.noData)
             return
@@ -99,8 +146,8 @@ export async function importCharacterProcess(f:{
             return
         }
         let lorebook:loreBook[] = null
-        if(reader.moduleData){
-            const md = await readModule(Buffer.from(reader.moduleData))
+        if(importer.moduleData){
+            const md = await readModule(Buffer.from(importer.moduleData))
             card.data.extensions ??= {}
             card.data.extensions.risuai ??= {}
             card.data.extensions.risuai.triggerscript = md.trigger ?? []
@@ -109,7 +156,8 @@ export async function importCharacterProcess(f:{
                 lorebook = md.lorebook
             }
         }
-        await importCharacterCardSpec(card, undefined, 'normal', reader.assets, lorebook)
+        await importer.done()
+        await importCharacterCardSpec(card, undefined, 'normal', importer.assets, lorebook)
         let db = getDatabase()
         return db.characters.length - 1
     }
@@ -168,7 +216,6 @@ export async function importCharacterProcess(f:{
     let queueFetchKey:string[] = []
     let queueFetchData:Buffer[] = []
     for await (const chunk of readGenerator){
-        console.log(chunk)
         if(!chunk){
             continue
         }
@@ -262,7 +309,6 @@ export async function importCharacterProcess(f:{
     }
 
     if(!img){
-        console.error("No Image Found")
         alertError(language.errors.noData)
         return
     }
@@ -328,7 +374,6 @@ export async function importCharacterProcess(f:{
 
     if(parsed.spec !== 'chara_card_v2' && parsed.spec !== 'chara_card_v3'){
         const charaData:OldTavernChar = JSON.parse(Buffer.from(readedChara, 'base64').toString('utf-8'))
-        console.log(charaData)
         const imgp = await saveAsset(img)
         db.characters.push(convertOffSpecCards(charaData, imgp))
         setDatabaseLite(db)
@@ -490,7 +535,7 @@ export async function characterURLImport() {
                 await importFile(f.name, data);
             }
         }
-        //@ts-ignore
+        //@ts-expect-error launchQueue is File Handling API for PWA, not yet in TypeScript's Window interface
         window.launchQueue.setConsumer((launchParams) => {
             if (launchParams.files && launchParams.files.length) {
                 const files = launchParams.files as FileSystemFileHandle[]
@@ -500,7 +545,7 @@ export async function characterURLImport() {
     }
 
     if("tauriOpenedFiles" in window){
-        //@ts-ignore
+        //@ts-expect-error tauriOpenedFiles is custom Tauri property, not defined in Window interface
         const files:string[] = window.tauriOpenedFiles
         if(files){
             for(const file of files){
@@ -587,7 +632,6 @@ export async function characterURLImport() {
 
 function convertOffSpecCards(charaData:OldTavernChar|CharacterCardV2Risu, imgp:string|undefined = undefined):character{
     const data = charaData.spec_version === '2.0' ? charaData.data : charaData
-    console.log("Off spec detected, converting")
     const charbook = charaData.spec_version === '2.0' ? charaData.data.character_book : null
     let lorebook:loreBook[] = []
     let loresettings:undefined|loreSettings = undefined
@@ -656,8 +700,9 @@ export async function exportChar(charaID:number):Promise<string> {
     }
 
     if(!char.image){
-        alertError('Image Required')
-        return ''
+        const res = await fetch('/none.webp')
+        const data = new Uint8Array(await res.arrayBuffer())
+        char.image = await saveAsset(data)
     }
 
     const option = await alertCardExport()
@@ -685,7 +730,6 @@ async function importCharacterCardSpec(card:CharacterCardV2Risu|CharacterCardV3,
     console.log(`Importing ${card.spec}, mode is ${mode}`)
 
     const data = card.data
-    console.log(card)
     let im = img ? await saveAsset(img) : undefined
     let db = getDatabase()
 
@@ -734,7 +778,10 @@ async function importCharacterCardSpec(card:CharacterCardV2Risu|CharacterCardV3,
                     msg: `Loading... (Loading Assets)`,
                     submsg: (i / risuext.additionalAssets.length * 100).toFixed(2)
                 })
-                await sleep(10)
+
+                if(i % 100 === 0){
+                    await sleep(10)
+                }
                 let fileName = ''
                 if(risuext.additionalAssets[i].length >= 3)
                     fileName = risuext.additionalAssets[i][2]
@@ -802,7 +849,9 @@ async function importCharacterCardSpec(card:CharacterCardV2Risu|CharacterCardV3,
                     msg: `Loading... (Assets)`,
                     submsg: (i / data.assets.length * 100).toFixed(2)
                 })
-                await sleep(10)
+                if(i % 100 === 0){
+                    await sleep(10)
+                }
                 let fileName = ''
                 let imgp = ''
                 if(data.assets[i].name){
@@ -855,7 +904,6 @@ async function importCharacterCardSpec(card:CharacterCardV2Risu|CharacterCardV3,
                         name: fileName,
                         ext: data.assets[i].ext ?? 'unknown'
                     })
-                    console.log(ccAssets)
                 }
             }
         }
@@ -1084,7 +1132,6 @@ function convertCharbook(arg:{
             extentions: {...extensions, risu_case_sensitive: book.case_sensitive},
             activationPercent: book.extensions?.risu_activationPercent,
             loreCache: book.extensions?.risu_loreCache ?? null,
-            //@ts-ignore
             useRegex: book.use_regex ?? false,
             folder: book.folder
         })
@@ -1099,7 +1146,7 @@ function convertCharbook(arg:{
 
 
 
-async function createBaseV2(char:character) {
+function createBaseV2(char:character) {
     
     let charBook:charBookEntry[] = []
     for(const lore of char.globalLore){
@@ -1216,7 +1263,6 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
                 'charxJpeg': ['CharX Embeded Jpeg', 'jpeg']
             }
             const ext = nameExt[type]
-            console.log(ext)
             await (localWriter as LocalWriter).init(ext[0], [ext[1]])
         }
         const writer = (type === 'charx' || type === 'charxJpeg') ? (new CharXWriter(localWriter)) : type === 'json' ? (new BlankWriter()) : (new PngChunk.streamWriter(img, localWriter))
@@ -1292,6 +1338,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
         }
         else if(spec === 'v3'){
             const card = createBaseV3(char)
+            const seenPaths = new Set<string>()
             if(card.data.assets && card.data.assets.length > 0){
                 for(let i=0;i<card.data.assets.length;i++){
                     alertStore.set({
@@ -1382,16 +1429,28 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
                         }
 
                         let path = ''
-                        const name = `${assetIndex}`
-                        if(card.data.assets[i].ext === 'unknown'){
-                            path = `assets/${type}/image/${name}.png`
+                        let name = card.data.assets[i].name || `asset_${assetIndex}`
+                        if(name.length > 100){
+                            name = name.substring(0,100)
                         }
-                        else{
-                            path = `assets/${type}/${itype}/${name}.${card.data.assets[i].ext}`
+                        const ext = card.data.assets[i].ext === 'unknown' ? 'png' : card.data.assets[i].ext
+                        const baseDir = card.data.assets[i].ext === 'unknown'
+                            ? `assets/${type}/image`
+                            : `assets/${type}/${itype}`
+
+                        // Generate unique path to avoid duplicate filenames
+                        let uniqueName = name
+                        let suffix = 0
+                        while(seenPaths.has(`${baseDir}/${uniqueName}.${ext}`)){
+                            suffix++
+                            uniqueName = `${name}_${suffix}`
                         }
+                        path = `${baseDir}/${uniqueName}.${ext}`
+                        seenPaths.add(path)
+
                         card.data.assets[i].uri = 'embeded://' + path
                         const imageType = checkImageType(rData)
-                        const metaPath = `x_meta/${name}.json`
+                        const metaPath = `x_meta/${uniqueName}.json`
                         if(imageType === 'PNG' && writer instanceof CharXWriter){
                             const metadatas:Record<string,string> = {}
                             const gen = PngChunk.readGenerator(rData)
@@ -1401,7 +1460,6 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
                                 }
                                 metadatas[chunk.key] = chunk.value
                             }
-                            console.log(metadatas)
                             if(Object.keys(metadatas).length > 0){
                                 await writer.write(metaPath, Buffer.from(JSON.stringify(metadatas, null, 4)), 6)
                             }
@@ -1463,12 +1521,11 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
 
     }
     catch(e){
-        console.error(e, e.stack)
         alertError(e)
     }
 }
 
-// Extended LorebookEntry with RisuAI specific fields
+// Extended LorebookEntry with Risuai specific fields
 type RisuLorebookEntry = LorebookEntry & {
     mode?: string;
     folder?: string;
@@ -1636,7 +1693,7 @@ export async function shareRisuHub2(char:character, arg:{
             tagList.push("nsfw")
         }
     
-        await alertWait("Uploading...")
+        alertWait("Uploading...")
         
     
         let tags = tagList.filter((v, i) => {
@@ -1722,11 +1779,11 @@ export async function getRisuHub(arg:{
 }):Promise<hubType[]> {
     try {
         arg.search += ' __shared'
-        const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==${(!isNodeServer && !Capacitor.isNativePlatform() && !isTauri) ? 'web' : 'other'}`
+        const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==${(!isNodeServer && !isCapacitor && !isTauri) ? 'web' : 'other'}`
 
         const da = await fetch(hubURL + '/realm/' + encodeURIComponent(stringArg), {
             headers: {
-                "x-risuai-info": appVer + ';' + (isNodeServer ? 'node' : (Capacitor.isNativePlatform() ? 'capacitor' : isTauri ? 'tauri' : 'web'))
+                "x-risuai-info": appVer + ';' + (isNodeServer ? 'node' : (isCapacitor ? 'capacitor' : isTauri ? 'tauri' : 'web'))
             }
         })
         if(da.status !== 200){
@@ -1769,7 +1826,6 @@ export async function downloadRisuHub(id:string, arg:{
         if(res.headers.get('content-type') === 'image/png' || res.headers.get('content-type') === 'application/zip' || res.headers.get('content-type') === 'application/charx'){
             let db = getDatabase()
             if(res.headers.get('content-type') === 'application/zip' || res.headers.get('content-type') === 'application/charx'){
-                console.log('zip')
                 await importCharacterProcess({
                     name: 'realm.charx',
                     data: new Uint8Array(await res.arrayBuffer()),
@@ -1940,8 +1996,8 @@ interface charBookEntry{
     position?: 'before_char' | 'after_char' // whether the entry is placed before or after the character defs
     case_sensitive?:boolean
     use_regex?:boolean
-    mode?: string // RisuAI mode field
-    folder?: string // RisuAI folder field
+    mode?: string // Risuai mode field
+    folder?: string // Risuai folder field
 }
 
 interface RccCardMetaData{

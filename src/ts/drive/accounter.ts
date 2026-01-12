@@ -6,9 +6,12 @@ import { decodeRisuSave } from "../storage/risuSave"
 import { language } from "src/lang"
 import { fetchProtectedResource } from "../sionyw"
 
-export async function risuLogin() {
+export function risuLogin() {
     const win = window.open(hubURL + '/hub/login')
     window.addEventListener("message", (ev) => {
+        if(ev.source !== win.window){
+            return
+        }
         console.log(ev)
         const data = JSON.parse(ev.data)
         console.log(data)
@@ -132,7 +135,7 @@ export async function loadRisuAccountBackup() {
             await decodeRisuSave(buf.buffer)
         )
     
-        await alertNormal('Loaded backup')
+        alertNormal('Loaded backup')
     }
 
 }

@@ -1,15 +1,16 @@
 import { get, writable } from "svelte/store";
 import { language } from "../../lang";
 import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from "../storage/database.svelte";
-import { alertError, alertMd, alertPluginConfirm } from "../alert";
-import { checkNullish, selectSingleFile, sleep } from "../util";
+import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
+import { selectSingleFile, sleep } from "../util";
 import type { OpenAIChat } from "../process/index.svelte";
 import { fetchNative, globalFetch, readImage, saveAsset, toGetter } from "../globalApi.svelte";
-import { DBState, pluginAlertModalStore, selectedCharID } from "../stores.svelte";
+import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from "../stores.svelte";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import { SafeDocument, SafeIdbFactory, SafeLocalStorage } from "./pluginSafeClass";
 import { loadV3Plugins } from "./apiV3/v3";
+import { pluginCodeTranspiler } from "./apiV3/transpiler";
 
 export const customProviderStore = writable([] as string[])
 
@@ -23,6 +24,9 @@ interface ProviderPlugin {
     version?: 1 | 2 | '2.1' | '3.0'
     customLink: ProviderPluginCustomLink[]
     argMeta: { [key: string]: {[key:string]:string} }
+    versionOfPlugin?: string
+    updateURL?: string
+    enabled?: boolean
 }
 interface ProviderPluginCustomLink {
     link: string
@@ -44,20 +48,104 @@ Risuai.log("Hello from New Plugin!");
     )
 }
 
+const compareVersions = (v1: string, v2: string): 0|1|-1 => {
+    const v1parts = v1.split('.').map(Number);
+    const v2parts = v2.split('.').map(Number);
+    const len = Math.max(v1parts.length, v2parts.length);
+    for (let i = 0; i < len; i++) {
+        const part1 = v1parts[i] || 0;
+        const part2 = v2parts[i] || 0;
+        if (part1 > part2) return 1;
+        if (part1 < part2) return -1;
+    }
+    return 0;
+}
+
+const updateCache = new Map<string, { version: string, updateURL: string } | undefined>();
+
+export const checkPluginUpdate = async (plugin: RisuPlugin) => {
+    try {
+        if(!plugin.updateURL){
+            return
+        }
+
+        if(updateCache.has(plugin.name)){
+            const cached = updateCache.get(plugin.name)
+            if(compareVersions(cached.version, plugin.versionOfPlugin || '0.0.0') === 1){
+                return cached
+            }
+        }
+
+        const response = (await fetch(plugin.updateURL, {
+            method: 'GET',
+            headers: {
+                'Range': 'bytes=0-512'
+            }
+        }))
+
+        if(response.status >= 200 && response.status < 300){
+            const text = await response.text()
+            const versioRegex = /\/\/@version\s+([^\s]+)/;
+            const match = text.match(versioRegex);
+            if(match && match[1]){
+                const latestVersion = match[1].trim()
+                if(compareVersions(latestVersion, plugin.versionOfPlugin || '0.0.0') === 1){
+                    updateCache.set(plugin.name, {
+                        version: latestVersion,
+                        updateURL: plugin.updateURL
+                    })
+                    return {
+                        version: latestVersion,
+                        updateURL: plugin.updateURL
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to check plugin update:', error)
+    }
+}
+
+export async function updatePlugin(plugin: RisuPlugin) {
+    try {
+        if(!plugin.updateURL){
+            return false
+        }
+        const response = await fetch(plugin.updateURL)
+        if(response.status >= 200 && response.status < 300){
+            const jsFile = await response.text()
+            await importPlugin(jsFile, {
+                isUpdate: true,
+                originalPluginName: plugin.name
+            })
+            return true
+        }
+    } catch (error) {
+        console.error('Failed to update plugin:', error)
+    }
+    return false
+}
+
 export async function importPlugin(code:string|null = null, argu:{
     isUpdate?: boolean
     originalPluginName?: string
+    isHotReload?: boolean
+    isTypescript?: boolean
 } = {}) {
     try {
         let jsFile = ''
         let db = getDatabase()
         let isUpdate = argu.isUpdate || false
         let originalPluginName = argu.originalPluginName || ''
+        let isTypescript = argu.isTypescript || false
         
         if(!code){
-            const f = await selectSingleFile(['js'])
+            const f = await selectSingleFile(['js','ts'])
             if (!f) {
                 return
+            }
+            if(f.name.endsWith('.ts')){
+                isTypescript = true
             }
             //support utf-8 with BOM or without BOM
             jsFile = Buffer.from(f.data).toString('utf-8').replace(/^\uFEFF/gm, "");
@@ -75,17 +163,28 @@ export async function importPlugin(code:string|null = null, argu:{
             }
         }
 
+        const showError = (msg: string) => {
+            if(argu.isHotReload){
+                console.error(`Hot-reload plugin "${name}" error: ${msg}`)
+            }
+            else{
+                alertError(msg)
+            }
+        }
+
         let displayName: string = undefined
         let arg: { [key: string]: 'int' | 'string' | string[] } = {}
         let realArg: { [key: string]: number | string } = {}
         let argMeta: { [key: string]: {[key:string]:string} } = {}
         let customLink: ProviderPluginCustomLink[] = []
+        let updateURL: string = ''
+        let versionOfPlugin: string = '' //This is the version of the plugin itself, not the API version
         let apiVersion = '2.0'
         for (const line of splitedJs) {
             if (line.startsWith('//@name')) {
                 const provied = line.slice(7)
                 if (provied === '') {
-                    alertError('plugin name must be longer than 0, did you put it correctly?')
+                    showError('plugin name must be longer than 0, did you put it correctly?')
                     return
                 }
                 name = provied.trim()
@@ -106,7 +205,7 @@ export async function importPlugin(code:string|null = null, argu:{
             if (line.startsWith('//@display-name')) {
                 const provied = line.slice('//@display-name'.length + 1)
                 if (provied === '') {
-                    alertError('plugin display name must be longer than 0, did you put it correctly?')
+                    showError('plugin display name must be longer than 0, did you put it correctly?')
                     return
                 }
                 displayName = provied.trim()
@@ -115,11 +214,11 @@ export async function importPlugin(code:string|null = null, argu:{
             if (line.startsWith('//@link')) {
                 const link = line.split(" ")[1]
                 if (!link || link === '') {
-                    alertError('plugin link is empty, did you put it correctly?')
+                    showError('plugin link is empty, did you put it correctly?')
                     return
                 }
                 if (!link.startsWith('https')) {
-                    alertError('plugin link must start with https, did you check it?')
+                    showError('plugin link must start with https, did you check it?')
                     return
                 }
                 const hoverText = line.split(' ').slice(2).join(' ').trim()
@@ -139,13 +238,13 @@ export async function importPlugin(code:string|null = null, argu:{
             if (line.startsWith('//@risu-arg') || line.startsWith('//@arg')) {
                 const provied = line.trim().split(' ')
                 if (provied.length < 3) {
-                    alertError('plugin argument is incorrect, did you put space in argument name?')
+                    showError('plugin argument is incorrect, did you put space in argument name?')
                     return
                 }
                 const provKey = provied[1]
 
                 if (provied[2] !== 'int' && provied[2] !== 'string') {
-                    alertError(`plugin argument type is "${provied[2]}", which is an unknown type.`)
+                    showError(`plugin argument type is "${provied[2]}", which is an unknown type.`)
                     return
                 }
                 if (provied[2] === 'int') {
@@ -177,11 +276,55 @@ export async function importPlugin(code:string|null = null, argu:{
                 }
             }
 
+            if(line.startsWith('//@update-url')){
+                updateURL = line.split(' ')[1]
+
+                try {
+                    const url = new URL(updateURL)
+                    if(url.protocol !== 'https:'){
+                        showError('plugin update URL must start with https, did you put it correctly?')
+                        return
+                    }
+                } catch (error) {
+                    showError('plugin update URL is not a valid URL, did you put it correctly?')
+                    return
+                }
+            }
+
+            if(line.startsWith('//@version')){
+                versionOfPlugin = line.split(' ').slice(1).join(' ').trim()
+
+                const versionLocation = jsFile.indexOf('//@version')
+                const numberOfBytesBefore = new TextEncoder().encode(jsFile.slice(0, versionLocation) + line).length
+                if(numberOfBytesBefore > 500){
+                    showError('plugin version declaration must be within the first 512 Bytes of the file for proper parsing. move //@version line to the top of the file.')
+                    return
+                }
+            }
         }
 
         if (name.length === 0) {
-            alertError('plugin name not found, did you put it correctly?')
+            showError('plugin name not found, did you put it correctly?')
             return
+        }
+
+        if(updateURL && versionOfPlugin.length === 0){
+            showError('plugin version not found, did you put it correctly? It is required when update URL is provided.')
+            return
+        }
+
+        if(versionOfPlugin && compareVersions(versionOfPlugin, '0.0.1') === -1){
+            showError('plugin version must be at least 0.0.1')
+            return
+        }
+
+        
+        if(isTypescript){
+            try {
+                jsFile = await pluginCodeTranspiler(jsFile)                
+            } catch (error) {
+                showError('Failed to transpile TypeScript code: ' + error.message)
+            }
         }
 
         let apiInternalVersion: 2|'2.1'|'3.0' = '2.1'
@@ -257,6 +400,10 @@ export async function importPlugin(code:string|null = null, argu:{
             apiInternalVersion = '3.0'
         }
 
+        if(apiInternalVersion !== '3.0' && argu.isHotReload){
+            showError('Only API version 3.0 plugins can be hot-reloaded.')
+            return
+        }
         
         let pluginData: RisuPlugin = {
             name: name,
@@ -266,30 +413,45 @@ export async function importPlugin(code:string|null = null, argu:{
             displayName: displayName,
             version: apiInternalVersion,
             customLink: customLink,
-            argMeta: argMeta
+            argMeta: argMeta,
+            versionOfPlugin: versionOfPlugin,
+            updateURL: updateURL,
+            enabled: true
         }
 
         db.plugins ??= []
 
-        if(isUpdate){
-            //find old plugin
-            const pluginIndex = db.plugins.findIndex((p: RisuPlugin) => p.name === originalPluginName);
-            if(pluginIndex !== -1){
-                db.plugins[pluginIndex] = pluginData;
-            }
-            else{
-                //set false to add as new plugin
-                isUpdate = false
+        const oldPluginIndex = db.plugins.findIndex((p: RisuPlugin) => p.name === pluginData.name);
+
+        if(originalPluginName && originalPluginName !== pluginData.name){
+            showError(`When updating plugin "${originalPluginName}", the plugin name cannot be changed to "${pluginData.name}". Please keep the original name to update.`)
+            return
+        }
+
+
+        if(!isUpdate && oldPluginIndex !== -1){
+            const c = await alertConfirm(language.duplicatePluginFoundUpdateIt)
+            if(!c){
+                return
             }
         }
 
-        if(!isUpdate){
+        if(oldPluginIndex !== -1){
+            db.plugins[oldPluginIndex] = pluginData;
+        }
+        else if(!isUpdate || argu.isHotReload){
             db.plugins.push(pluginData)
         }
 
+        if(argu.isHotReload && !hotReloading.includes(pluginData.name)){
+            hotReloading.push(pluginData.name)
+        }
+
+        console.log(`Imported plugin: ${pluginData.name} (API v${apiVersion})`)
         setDatabaseLite(db)
 
-        //Previously we loaded plugin here
+        loadPlugins()
+        
     } catch (error) {
         console.error(error)
         alertError(language.errors.noData)
@@ -299,12 +461,13 @@ export async function importPlugin(code:string|null = null, argu:{
 let pluginTranslator = false
 
 export async function loadPlugins() {
+    console.log('Loading plugins...')
     let db = getDatabase()
 
 
-    const structuredCloned = safeStructuredClone(db.plugins)
-    const pluginV2 = structuredCloned.filter((a: RisuPlugin) => a.version === 2 || a.version === '2.1')
-    const pluginV3 = structuredCloned.filter((a: RisuPlugin) => a.version === '3.0')
+    const enabledPlugins = safeStructuredClone(db.plugins).filter((p: RisuPlugin) => p.enabled)
+    const pluginV2 = enabledPlugins.filter((a: RisuPlugin) => a.version === 2 || a.version === '2.1')
+    const pluginV3 = enabledPlugins.filter((a: RisuPlugin) => a.version === '3.0')
 
     await loadV2Plugin(pluginV2)
     await loadV3Plugins(pluginV3)
@@ -344,7 +507,7 @@ export const pluginV2 = {
     loaded: false
 }
 
-const allowedDbKeys = [
+export const allowedDbKeys = [
     'characters',
     'modules',
     'enabledModules',
@@ -352,7 +515,23 @@ const allowedDbKeys = [
     'pluginV2',
     'personas',
     'plugins',
-    'pluginCustomStorage'
+    'pluginCustomStorage',
+    'temperature',
+    'askRemoval',
+    'maxContext',
+    'maxResponse',
+    'frequencyPenalty',
+    'PresensePenalty',
+    'theme',
+    'textTheme',
+    'lineHeight',
+    'seperateModelsForAxModels',
+    'seperateModels',
+    'customCSS',
+    'guiHTML',
+    'colorSchemeName',
+    'selectedPersona',
+    'characterOrder'
 ]
 
 export const getV2PluginAPIs = () => {
@@ -369,7 +548,7 @@ export const getV2PluginAPIs = () => {
             }
         },
         getChar: () => {
-            return getCurrentCharacter()
+            return getCurrentCharacter({ snapshot: true })
         },
         setChar: (char: any) => {
             const db = getDatabase()
@@ -462,19 +641,19 @@ export const getV2PluginAPIs = () => {
                 )
             }
             safeGlobal.setInterval = (...args: any[]) => {
-                //@ts-ignore
+                //@ts-expect-error spreading any[] into setInterval params causes type mismatch with TimerHandler signature
                 return globalThis.setInterval(...args);
             }
             safeGlobal.setTimeout = (...args: any[]) => {
-                //@ts-ignore
+                //@ts-expect-error spreading any[] into setTimeout params causes type mismatch with TimerHandler signature
                 return globalThis.setTimeout(...args);
             }
             safeGlobal.clearInterval = (...args: any[]) => {
-                //@ts-ignore
+                //@ts-expect-error spreading any[] into clearInterval - first arg should be number | undefined
                 return globalThis.clearInterval(...args);
             }
             safeGlobal.clearTimeout = (...args: any[]) => {
-                //@ts-ignore
+                //@ts-expect-error spreading any[] into clearTimeout - first arg should be number | undefined
                 return globalThis.clearTimeout(...args);
             }
             safeGlobal.alert = globalThis.alert;
@@ -499,11 +678,11 @@ export const getV2PluginAPIs = () => {
             safeGlobal.Function = globalThis.__pluginApis__.SafeFunction;
             safeGlobal.document = globalThis.__pluginApis__.safeDocument;
             safeGlobal.addEventListener = (...args: any[]) => {
-                //@ts-ignore
+                //@ts-expect-error spreading any[] into addEventListener - expects (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions)
                 window.addEventListener(...args);
             }
             safeGlobal.removeEventListener = (...args: any[]) => {
-                //@ts-ignore
+                //@ts-expect-error spreading any[] into removeEventListener - expects (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions)
                 window.removeEventListener(...args);
             }
             return safeGlobal;
@@ -562,7 +741,7 @@ export const getV2PluginAPIs = () => {
         },
         pluginStorage: {
             getItem: (key: string) => {
-                const db = getDatabase();
+                const db = getDatabase({ snapshot: true });
                 db.pluginCustomStorage ??= {}
                 return db.pluginCustomStorage[key] || null;
             },
@@ -671,36 +850,39 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
             version = 2
         }
 
+        const createRealScript = (data:string) => {
+            return `(async () => {
+                const risuFetch = globalThis.__pluginApis__.risuFetch
+                const nativeFetch = globalThis.__pluginApis__.nativeFetch
+                const getArg = globalThis.__pluginApis__.getArg
+                const printLog = globalThis.__pluginApis__.printLog
+                const getChar = globalThis.__pluginApis__.getChar
+                const setChar = globalThis.__pluginApis__.setChar
+                const addProvider = globalThis.__pluginApis__.addProvider
+                const addRisuScriptHandler = globalThis.__pluginApis__.addRisuScriptHandler
+                const removeRisuScriptHandler = globalThis.__pluginApis__.removeRisuScriptHandler
+                const addRisuReplacer = globalThis.__pluginApis__.addRisuReplacer
+                const removeRisuReplacer = globalThis.__pluginApis__.removeRisuReplacer
+                const onUnload = globalThis.__pluginApis__.onUnload
+                const setArg = globalThis.__pluginApis__.setArg
+                ${version === '2.1' ? `
+                    const safeGlobalThis = globalThis.__pluginApis__.getSafeGlobalThis()
+                    const Risuai = globalThis.__pluginApis__
+                    const safeLocalStorage = globalThis.__pluginApis__.safeLocalStorage
+                    const safeIdbFactory = globalThis.__pluginApis__.safeIdbFactory
+                    const alertStore = globalThis.__pluginApis__.alertStore
+                    const safeDocument = globalThis.__pluginApis__.safeDocument
+                    const getDatabase = globalThis.__pluginApis__.getDatabase
+                    const setDatabaseLite = globalThis.__pluginApis__.setDatabaseLite
+                    const setDatabase = globalThis.__pluginApis__.setDatabase
+                    const loadPlugins = globalThis.__pluginApis__.loadPlugins
+                    const SafeFunction = globalThis.__pluginApis__.SafeFunction
+                ` : ''}
 
-        const realScript = `(async () => {
-            const risuFetch = globalThis.__pluginApis__.risuFetch
-            const nativeFetch = globalThis.__pluginApis__.nativeFetch
-            const getArg = globalThis.__pluginApis__.getArg
-            const printLog = globalThis.__pluginApis__.printLog
-            const getChar = globalThis.__pluginApis__.getChar
-            const setChar = globalThis.__pluginApis__.setChar
-            const addProvider = globalThis.__pluginApis__.addProvider
-            const addRisuScriptHandler = globalThis.__pluginApis__.addRisuScriptHandler
-            const removeRisuScriptHandler = globalThis.__pluginApis__.removeRisuScriptHandler
-            const addRisuReplacer = globalThis.__pluginApis__.addRisuReplacer
-            const removeRisuReplacer = globalThis.__pluginApis__.removeRisuReplacer
-            const onUnload = globalThis.__pluginApis__.onUnload
-            const setArg = globalThis.__pluginApis__.setArg
-            ${version === '2.1' ? `
-                const safeGlobalThis = globalThis.__pluginApis__.getSafeGlobalThis()
-                const Risuai = globalThis.__pluginApis__
-                const safeLocalStorage = globalThis.__pluginApis__.safeLocalStorage
-                const safeIdbFactory = globalThis.__pluginApis__.safeIdbFactory
-                const alertStore = globalThis.__pluginApis__.alertStore
-                const safeDocument = globalThis.__pluginApis__.safeDocument
-                const getDatabase = globalThis.__pluginApis__.getDatabase
-                const setDatabaseLite = globalThis.__pluginApis__.setDatabaseLite
-                const setDatabase = globalThis.__pluginApis__.setDatabase
-                const loadPlugins = globalThis.__pluginApis__.loadPlugins
-                const SafeFunction = globalThis.__pluginApis__.SafeFunction
-            ` : ''}
-            ${data}
-        })();`
+                ${data}
+            })();`
+
+        }
 
         if(version === '2.1'){
             const safety = (await checkCodeSafety(plugin.script))
@@ -709,7 +891,7 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
             console.log('Loading V2.1 Plugin', plugin.name, data)
 
             try {
-                new Function(realScript)()
+                new Function(createRealScript(data))()
             } catch (error) {
                 console.error(error)
             }
@@ -721,7 +903,7 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
             console.log('Loading V2.0 Plugin', plugin.name)
 
             try {
-                eval(data)
+                eval(createRealScript(data))
             } catch (error) {
                 console.error(error)
             }
