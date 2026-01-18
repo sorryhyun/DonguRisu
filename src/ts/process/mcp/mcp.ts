@@ -8,6 +8,7 @@ import type { MCPClientLike } from "./internalmcp";
 import localforage from "localforage";
 import { isTauri } from "src/ts/platform"
 import { sleep } from "src/ts/util";
+import { getPluginMCPClient } from "./pluginmcp";
 import { getLocalMCPServer } from "./localserver";
 
 export type MCPToolWithURL = MCPTool & {
@@ -176,7 +177,23 @@ export async function initializeMCPs(additionalMCPs?:string[]) {
         }
     }
 
+    // Add plugin MCP client if it has tools registered
+    const pluginClient = getPluginMCPClient();
+    if (pluginClient.hasTools()) {
+        MCPs['internal:plugin'] = pluginClient;
+        await pluginClient.checkHandshake();
+    } else {
+        // Remove if no tools (plugin was unloaded)
+        if (MCPs['internal:plugin']) {
+            delete MCPs['internal:plugin'];
+        }
+    }
+
     for(const key of Object.keys(MCPs)) {
+        // Don't remove plugin MCP client (managed separately)
+        if (key === 'internal:plugin') {
+            continue;
+        }
         if(!mcpUrls.includes(key)) {
             MCPs[key].destroy()
             delete MCPs[key];

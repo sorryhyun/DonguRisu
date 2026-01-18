@@ -218,7 +218,9 @@ export class MCPClient{
                                 detail: sseEventDetail
                             }))
                             this.sseIdDone.add(jsonData.id)
-                        } catch (error) {}
+                        } catch (error) {
+                            // SSE message parsing failed, skip
+                        }
                     }
                 }
             }

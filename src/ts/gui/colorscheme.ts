@@ -158,8 +158,10 @@ export function changeColorScheme(colorScheme: string){
         }
         db.colorSchemeName = colorScheme
         setDatabase(db)
-        updateColorScheme()   
-    } catch (error) {}
+        updateColorScheme()
+    } catch (error) {
+        console.error('Failed to change color scheme:', error)
+    }
 }
 
 export function updateColorScheme(){
@@ -187,7 +189,9 @@ export function updateColorScheme(){
         document.documentElement.style.setProperty("--risu-theme-darkborderc", colorScheme.darkBorderc);
         document.documentElement.style.setProperty("--risu-theme-darkbutton", colorScheme.darkbutton);
         ColorSchemeTypeStore.set(colorScheme.type)
-    } catch (error) {}
+    } catch (error) {
+        console.error('Failed to update color scheme:', error)
+    }
 }
 
 export function changeColorSchemeType(type: 'light'|'dark'){
@@ -197,7 +201,9 @@ export function changeColorSchemeType(type: 'light'|'dark'){
         setDatabase(db)
         updateColorScheme()
         updateTextThemeAndCSS()
-    } catch (error) {}
+    } catch (error) {
+        console.error('Failed to change color scheme type:', error)
+    }
 }
 
 export function exportColorScheme(){

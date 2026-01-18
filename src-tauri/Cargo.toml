@@ -1,10 +1,10 @@
 [package]
-name = "risuai"
-version = "0.0.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+name = "dongurisu"
+version = "1.0.0"
+description = "DonguRisu - A fork of RisuAI"
+authors = ["sorryhyun"]
+license = "GPL-3.0"
+repository = "https://github.com/sorryhyun/DonguRisu"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

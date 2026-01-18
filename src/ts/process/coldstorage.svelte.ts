@@ -114,8 +114,10 @@ async function setColdStorageItem(key:string, value:any) {
         if(res.status !== 200){
             try {
                 console.error('Error setting cold storage item')
-                console.error(await res.text())   
-            } catch (error) {}
+                console.error(await res.text())
+            } catch (error) {
+                console.error('Failed to read error response:', error)
+            }
         }
         return
     }

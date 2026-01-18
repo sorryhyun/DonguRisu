@@ -115,7 +115,6 @@ export async function loadData() {
                 }
                 try {
                     const decoded = await decodeRisuSave(gotStorage)
-                    console.log(decoded)
                     setDatabase(decoded)
                 } catch (error) {
                     console.error(error)
@@ -129,7 +128,9 @@ export async function loadData() {
                                 await decodeRisuSave(backupData)
                             )
                             backupLoaded = true
-                        } catch (error) { }
+                        } catch (error) {
+                            console.warn(`Failed to load backup ${backup}:`, error)
+                        }
                     }
                     if (!backupLoaded) {
                         throw "Forage: Your save file is corrupted"
@@ -160,7 +161,9 @@ export async function loadData() {
                                     await decodeRisuSave(backupData)
                                 )
                                 backupLoaded = true
-                            } catch (error) { }
+                            } catch (error) {
+                                console.warn(`Failed to load remote backup ${backup}:`, error)
+                            }
                         }
                         if (!backupLoaded) {
                             // throw "Your save file is corrupted"
@@ -197,12 +200,16 @@ export async function loadData() {
             LoadingStatusState.text = "Loading Plugins..."
             try {
                 await loadPlugins()
-            } catch (error) { }
+            } catch (error) {
+                console.error('Failed to load plugins:', error)
+            }
             if (getDatabase().account) {
                 LoadingStatusState.text = "Checking Account Data..."
                 try {
                     await loadRisuAccountData()
-                } catch (error) { }
+                } catch (error) {
+                    console.error('Failed to load Risu account data:', error)
+                }
             }
             try {
                 //@ts-expect-error navigator.standalone is iOS Safari non-standard property, not in Navigator interface
@@ -211,7 +218,7 @@ export async function loadData() {
                     await navigator.storage.persist()
                 }
             } catch (error) {
-
+                // Storage persistence may not be available on all browsers
             }
             LoadingStatusState.text = "Checking For Format Update..."
             await checkNewFormat()
@@ -457,19 +464,14 @@ async function pargeChunks() {
     const unpargeable = new Set(getUnpargeables(db))
     if (isTauri) {
         const assets = await readDir('assets', { baseDir: BaseDirectory.AppData })
-        console.log(assets)
         for (const asset of assets) {
             try {
                 const n = getBasename(asset.name)
-                if (unpargeable.has(n)) {
-                    console.log('unpargeable', n)
-                }
-                else {
-                    console.log('pargeable', n)
+                if (!unpargeable.has(n)) {
                     await remove('assets/' + asset.name, { baseDir: BaseDirectory.AppData })
                 }
             } catch (error) {
-                console.log('error', asset.name)
+                console.warn('Failed to remove asset:', asset.name, error)
             }
         }
     }

@@ -504,6 +504,29 @@ body {
   @apply border border-darkborderc bg-darkbg text-textcolor rounded-md shadow-xs focus:outline-hidden transition-colors duration-200 px-4 py-2 min-w-0;
 }
 
+.x-risu-tool-call > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.x-risu-tool-call > summary::-webkit-details-marker {
+  display: none;
+}
+
+.x-risu-tool-call > summary::before {
+  content: '▶ ';
+  font-size: 0.75em;
+  margin-right: 0.25em;
+}
+
+.x-risu-tool-call[open] > summary::before {
+  content: '▼ ';
+}
+
+.x-risu-tool-result {
+  @apply mt-2 pt-2 border-t border-darkborderc text-sm opacity-80 whitespace-pre-wrap;
+}
+
 .root-loaded-image {
   /* This class is used to indicate that the image has been with root-loaded method */
   /* We need to style it to centered and pretty */

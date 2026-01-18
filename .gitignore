@@ -34,7 +34,7 @@ pycache/
 test.ts
 .wrangler/
 .qoder/*
-
+pr_message.md
 
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*

@@ -105,7 +105,9 @@ export function detectPromptJSONType(text:string){
         else if(notNull(parsed.input_sequence) && notNull(parsed.output_sequence)){
             return "STINST"
         }
-    } catch (e) {}
+    } catch (e) {
+        // JSON parsing failed, format not supported
+    }
     return 'NOTSUPPORTED'
 }
 

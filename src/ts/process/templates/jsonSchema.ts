@@ -185,7 +185,9 @@ export function extractJSON(data:string, format:string){
         data = data.trim()
         if(data.startsWith('{')){
             return extract(JSON.parse(jsonOutputTrimmer(data)), format)
-        }   
-    } catch (error) {}
+        }
+    } catch (error) {
+        // JSON parsing or extraction failed, return original data
+    }
     return data
 }

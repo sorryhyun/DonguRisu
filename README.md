@@ -1,12 +1,11 @@
-# Risuai
-
-<picture>
-  <img alt="text" src="https://raw.githubusercontent.com/kwaroran/Risuai/refs/heads/main/public/logo_typo_small.avif" width="400"/>
-</picture>
+# DonguRisu
 
 [![Svelte](https://img.shields.io/badge/svelte-5-red?logo=svelte)](https://svelte.dev/) [![Typescript](https://img.shields.io/badge/typescript-5.9-blue?logo=typescript)](https://www.typescriptlang.org/) [![Tauri](https://img.shields.io/badge/tauri-2.5-%2324C8D8?logo=tauri)](https://tauri.app/) [![Vite](https://img.shields.io/badge/vite-7-%23646CFF?logo=vite)](https://vite.dev/) [![Tailwind CSS](https://img.shields.io/badge/tailwindcss-4-%2306B6D4?logo=tailwindcss)](https://tailwindcss.com/)
 
-Risuai, or Risu for short, is a cross platform AI chatting software / web application with powerful features such as multiple API support, assets in the chat, regex functions and much more.
+> **This is a fork of [RisuAI](https://github.com/kwaroran/RisuAI)** - a cross-platform AI chatting application.
+> All credit for the original work goes to [Kwaroran](https://github.com/kwaroran) and the RisuAI contributors.
+
+DonguRisu is a customized fork of RisuAI, a cross platform AI chatting software / web application with powerful features such as multiple API support, assets in the chat, regex functions and much more.
 
 # Screenshots
 
@@ -39,22 +38,37 @@ Risuai, or Risu for short, is a cross platform AI chatting software / web applic
 
 You can get detailed information on https://github.com/kwaroran/Risuai/wiki (Work in Progress)
 
-## Community
+## Upstream Project
 
-- [Discord Server](https://discord.gg/JzP8tB9ZK8)
+This fork is based on **RisuAI**. For the original project:
+- [RisuAI GitHub](https://github.com/kwaroran/RisuAI)
+- [RisuAI Website](https://risuai.net)
+- [RisuAI Discord](https://discord.gg/JzP8tB9ZK8)
 
 ## Installation
 
-- [Risuai Website](https://risuai.net) (Recommended)
-- [Github Releases](https://github.com/kwaroran/Risuai/releases)
+### From Source
+
+```bash
+git clone https://github.com/sorryhyun/DonguRisu.git
+cd DonguRisu
+pnpm install
+pnpm dev
+```
+
+### Github Releases
+
+- [DonguRisu Releases](https://github.com/sorryhyun/DonguRisu/releases)
 
 ### Docker Installation
 
-You can also run Risuai using Docker. This method is particularly useful for web hosting.
+You can also run DonguRisu using Docker:
 
-1. Run the Docker container:
-   ```
-   curl -L https://raw.githubusercontent.com/kwaroran/Risuai/refs/heads/main/docker-compose.yml | docker compose -f - up -d
+1. Clone the repository and run:
+   ```bash
+   git clone https://github.com/sorryhyun/DonguRisu.git
+   cd DonguRisu
+   docker compose up -d
    ```
 
-2. Access Risuai at `http://localhost:6001` in your web browser.
+2. Access DonguRisu at `http://localhost:6001` in your web browser.

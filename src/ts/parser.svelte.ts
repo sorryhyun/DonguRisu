@@ -11,6 +11,7 @@ import { selectedCharID } from './stores.svelte';
 import { calcString } from './process/infunctions';
 import { findCharacterbyId, getPersonaPrompt, getUserIcon, getUserName, parseKeyValue, pickHashRand, replaceAsync} from './util';
 import { getInlayAssetBlob } from './process/files/inlays';
+import { decodeToolCall } from './process/mcp/mcp';
 import { getModuleAssets, getModuleLorebooks, getModules } from './process/modules';
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
@@ -668,7 +669,7 @@ export interface simpleCharacterArgument{
     triggerscript?: triggerscript[]
 }
 
-function parseThoughtsAndTools(data:string){
+async function parseThoughtsAndTools(data:string){
     let result = '', i = 0
     while (i < data.length) {
         if (data.slice(i, i + 10) === '<Thoughts>') {
@@ -686,8 +687,19 @@ function parseThoughtsAndTools(data:string){
         }
         result += data[i++]
     }
-    return result.replace(/<tool_call>(.+?)<\/tool_call>/gms, (full, txt:string) => {
-        return `<div class="x-risu-tool-call">🛠️ ${language.toolCalled.replace('{{tool}}',txt.split('\uf100')?.[1] ?? 'unknown')}</div>\n\n`
+    return await replaceAsync(result, /<tool_call>(.+?)<\/tool_call>/gms, async (full:string, txt:string) => {
+        const toolName = txt.split('\uf100')?.[1] ?? 'unknown'
+        const toolData = await decodeToolCall(txt)
+
+        let resultContent = ''
+        if (toolData?.response) {
+            const responseText = toolData.response
+                .map(r => r.type === 'text' ? r.text : `[${r.type}]`)
+                .join('\n')
+            resultContent = `<div class="x-risu-tool-result">${responseText}</div>`
+        }
+
+        return `<details class="x-risu-tool-call"><summary>🛠️ ${language.toolCalled.replace('{{tool}}', toolName)}</summary>${resultContent}</details>\n\n`
     })
 }
 
@@ -721,7 +733,7 @@ export async function ParseMarkdown(
 
     data = await parseInlayAssets(data ?? '')
 
-    data = parseThoughtsAndTools(data)
+    data = await parseThoughtsAndTools(data)
 
     data = encodeStyle(data)
     if(mode === 'normal' || mode === 'notrim'){
@@ -794,10 +806,7 @@ export function addMetadataToElement(data:string, modelShortName:string){
         }
     }
 
-    console.log('Encoded metadata:', encodedMetaCode.length, 'characters')
-    console.log('This requires at least', Math.ceil(encodedMetaCode.length / 32), '<p> tags to store')
-
-    let d =  data.replace(/\<p\>/g, (v) => {
+    let d =  data.replace(/\<p\>/g, (_v) => {
         return '<p>' + encodedMetaCode
     })
 
@@ -1063,7 +1072,9 @@ function matcher (p1:string,matcherArg:matcherArg,vars:{[key:string]:string}|nul
         if(callback){
             return callback(p1, matcherArg, args,vars)
         }
-    } catch (error) {}
+    } catch (error) {
+        // Matcher failed, return null
+    }
 
     return null
 }
@@ -1727,7 +1738,6 @@ export function risuChatParser(da:string, arg:{
                             break
                         }
                         if(blockType.type === 'function'){
-                            console.log(matchResult)
                             functions.set(blockType.funcArg[0], {
                                 data: matchResult,
                                 arg: blockType.funcArg.slice(1)
@@ -1758,7 +1768,6 @@ export function risuChatParser(da:string, arg:{
                     const argData = dat.split('::').slice(1)
                     const funcName = argData[0]
                     const func = functions.get(funcName)
-                    console.log(func)
                     if(func){
                         let data = func.data
                         for(let i = 0;i < argData.length;i++){

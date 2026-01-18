@@ -1,7 +1,12 @@
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 
- Copyright (C) 2024 Kwaroran
+ Original Work Copyright (C) 2024 Kwaroran
+ Fork Modifications Copyright (C) 2025 sorryhyun
+
+ This is a fork of RisuAI (https://github.com/kwaroran/RisuAI).
+ Modified work is distributed under the same GPL-3.0 license.
+
  Everyone is permitted to copy and distribute verbatim copies
  of this license document, but changing it is not allowed.
 
