@@ -27,23 +27,14 @@
       }
     ]
   },
-  "productName": "RisuAI",
-  "mainBinaryName": "RisuAI",
-  "version": "2026.1.90",
-  "identifier": "co.aiclient.risu",
+  "productName": "DonguRisu",
+  "mainBinaryName": "DonguRisu",
+  "version": "1.0.0",
+  "identifier": "com.sorryhyun.dongurisu",
   "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU2ODMzOTIxMDMxOTY1MUYKUldRZlpSa0RJVG1EVmx5Vm1WYlhFM29HMEJrUTRrYmg5dDQ0RFpvdUphNDdxQmVlWXJHVmV5TEYK",
-      "endpoints": [
-        "https://github.com/kwaroran/RisuAI/releases/latest/download/latest.json"
-      ],
-      "windows": {
-        "installMode": "passive"
-      }
-    },
     "deep-link": {
       "desktop": {
-        "schemes": ["risuailocal"]
+        "schemes": ["dongurisulocal"]
       }
     }
   },
@@ -53,7 +44,7 @@
       {
         "fullscreen": false,
         "resizable": true,
-        "title": "Risuai",
+        "title": "DonguRisu",
         "width": 1024,
         "height": 768,
         "minWidth": 300,
