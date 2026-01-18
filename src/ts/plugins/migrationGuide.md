@@ -731,11 +731,61 @@ This will make the software load the plugin in the highest supported api version
 })();
 ```
 
+# Security Concerns
+
+## Why Migrate to API 3.0?
+
+### Security Risks of API 2.x
+
+API versions 2.0 and 2.1 have known security vulnerabilities that make them unsuitable for the upcoming account system:
+
+1. **Global Scope Access**: Plugins can access sensitive global variables, potentially exposing API keys and user credentials.
+
+2. **DOM Manipulation**: Direct document access allows plugins to:
+   - Inject malicious scripts
+   - Steal user input (including passwords)
+   - Modify the UI to phish credentials
+   - Intercept network requests
+
+3. **Storage Access**: Even with `safeLocalStorage`, data isolation is incomplete between plugins.
+
+4. **Cross-Plugin Communication**: Data can leak between plugins through shared global state.
+
+### How API 3.0 Addresses These Issues
+
+- **Iframe Isolation**: Each plugin runs in its own sandboxed iframe
+- **SafeElement Wrappers**: All DOM access goes through security-checked wrappers
+- **Attribute Restrictions**: Only `x-` prefixed custom attributes can be manipulated
+- **HTML Sanitization**: All HTML content is sanitized with DOMPurify
+- **Event Filtering**: Dangerous events are blocked; keyboard events are delayed to prevent fingerprinting
+- **Structured Cloning**: Data exchange uses structured cloning to prevent prototype pollution
+
+## Migration Help
+
+### Resources
+
+- **GitHub Issues**: Report issues or request help at https://github.com/kwaroran/RisuAI/issues
+- **Documentation**: Full API reference in [plugins.md](/plugins.md)
+- **Type Definitions**: Use [risuai.d.ts](./apiV3/risuai.d.ts) for TypeScript support
+
+### Common Migration Patterns
+
+If you're stuck migrating a specific pattern, check the migration examples above or open a GitHub issue with the tag `plugin-migration`.
+
 # Deprecation Schedule
 
-| Version | Deprecation Date | Notes |
-|---------|------------------|-------|
-| 1.0    | Already Deprecated | No longer supported, plugins using this version will not work in current versions. |
-| 2.0     | After Account System Release | Transitional support for legacy plugins, it will quickly be deprecated after account system release. |
-| 2.1     | Unknown (Long-term support) | Will be supported for a long time for compatibility, but security warnings will be shown after 2.0 deprecation. |
-| 3.0     | N/A              | Recommended version for new plugins, will be supported indefinitely, unless major security issues arise. |
+| Version | Deprecation Date | Removal Date | Notes |
+|---------|------------------|--------------|-------|
+| 1.0     | Already Deprecated | Already Removed | No longer supported, plugins using this version will not work. |
+| 2.0     | January 2026 | **Q3 2026** (July-September) | Transitional support ending. Migrate to 3.0 immediately. Security warnings shown. |
+| 2.1     | Q3 2026 | **Q4 2026** (October-December) | Extended support for compatibility. Security warnings shown after 2.0 removal. |
+| 3.0     | N/A | N/A | Recommended version for all plugins. Will be supported indefinitely.
+
+**Important Timeline:**
+
+- **Now**: Begin migrating all plugins to API 3.0
+- **January 2026**: API 2.0 plugins will show deprecation warnings
+- **Q3 2026**: API 2.0 support will be completely removed
+- **Q4 2026**: API 2.1 support will be completely removed
+
+After removal, plugins using deprecated APIs will fail to load. Users will need to update or replace affected plugins.

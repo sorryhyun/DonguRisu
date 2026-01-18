@@ -13,6 +13,43 @@ import type { PromptItem, PromptSettings } from '../process/prompt';
 import type { OobaChatCompletionRequestParams } from '../model/ooba';
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
 import { isTauri, isNodeServer } from "src/ts/platform"
+import {
+    DEFAULT_TEMPERATURE,
+    DEFAULT_MAX_CONTEXT,
+    DEFAULT_MAX_RESPONSE,
+    DEFAULT_PRESET_MAX_RESPONSE,
+    DEFAULT_FREQUENCY_PENALTY,
+    DEFAULT_PRESENCE_PENALTY,
+    DEFAULT_LOREBOOK_DEPTH,
+    DEFAULT_LOREBOOK_TOKEN,
+    DEFAULT_HYPA_ALLOCATED_TOKENS,
+    DEFAULT_HYPA_CHUNK_SIZE,
+    DEFAULT_SUPA_CHUNK_SIZE,
+    DEFAULT_HANURAI_TOKENS,
+    DEFAULT_REQUEST_TIMEOUT,
+    DEFAULT_REQUEST_RETRIES,
+    DEFAULT_ZOOM_SIZE,
+    DEFAULT_ICON_SIZE,
+    DEFAULT_WAIFU_WIDTH,
+    DEFAULT_LINE_HEIGHT,
+    DEFAULT_ANIMATION_SPEED,
+    DEFAULT_ASSET_MAX_DIFFERENCE,
+    DEFAULT_SD_STEPS,
+    DEFAULT_SD_CFG,
+    DEFAULT_SD_WIDTH,
+    DEFAULT_SD_HEIGHT,
+    DEFAULT_NAI_WIDTH,
+    DEFAULT_NAI_HEIGHT,
+    DEFAULT_NAI_STEPS,
+    DEFAULT_NAI_SCALE,
+    DEFAULT_OOBA_MAX_NEW_TOKENS,
+    DEFAULT_OOBA_TRUNCATION_LENGTH,
+    DEFAULT_TRANSLATOR_MAX_RESPONSE,
+    DEFAULT_GEN_TIME,
+    DEFAULT_COMFY_TIMEOUT,
+    DEFAULT_TOP_P,
+    DEFAULT_SETTINGS_CLOSE_BUTTON_SIZE,
+} from '../constants'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = "2026.1.90" //<APP_VERSION_POINT>
@@ -39,19 +76,19 @@ export function setDatabase(data:Database){
         data.globalNote = ``
     }
     if(checkNullish(data.temperature)){
-        data.temperature = 80
+        data.temperature = DEFAULT_TEMPERATURE
     }
     if(checkNullish(data.maxContext)){
-        data.maxContext = 4000
+        data.maxContext = DEFAULT_MAX_CONTEXT
     }
     if(checkNullish(data.maxResponse)){
-        data.maxResponse = 500
+        data.maxResponse = DEFAULT_MAX_RESPONSE
     }
     if(checkNullish(data.frequencyPenalty)){
-        data.frequencyPenalty = 70
+        data.frequencyPenalty = DEFAULT_FREQUENCY_PENALTY
     }
     if(checkNullish(data.PresensePenalty)){
-        data.PresensePenalty = 70
+        data.PresensePenalty = DEFAULT_PRESENCE_PENALTY
     }
     if(checkNullish(data.aiModel)){
         data.aiModel = 'gemini-3-flash-preview'
@@ -63,10 +100,10 @@ export function setDatabase(data:Database){
         data.formatingOrder = ['main','description', 'personaPrompt','chats','lastChat','jailbreak','lorebook', 'globalNote', 'authorNote']
     }
     if(checkNullish(data.loreBookDepth)){
-        data.loreBookDepth = 5
+        data.loreBookDepth = DEFAULT_LOREBOOK_DEPTH
     }
     if(checkNullish(data.loreBookToken)){
-        data.loreBookToken = 800
+        data.loreBookToken = DEFAULT_LOREBOOK_TOKEN
     }
     if(checkNullish(data.username)){
         data.username = 'User'
@@ -99,7 +136,7 @@ export function setDatabase(data:Database){
         data.translator = ''
     }
     if(checkNullish(data.translatorMaxResponse)){
-        data.translatorMaxResponse = 1000
+        data.translatorMaxResponse = DEFAULT_TRANSLATOR_MAX_RESPONSE
     }
     if(checkNullish(data.currentPluginProvider)){
         data.currentPluginProvider = ''
@@ -108,7 +145,7 @@ export function setDatabase(data:Database){
         data.plugins = []
     }
     if(checkNullish(data.zoomsize)){
-        data.zoomsize = 100
+        data.zoomsize = DEFAULT_ZOOM_SIZE
     }
     if(checkNullish(data.lastup)){
         data.lastup = ''
@@ -132,7 +169,7 @@ export function setDatabase(data:Database){
         data.playMessage = false
     }
     if(checkNullish(data.iconsize)){
-        data.iconsize = 100
+        data.iconsize = DEFAULT_ICON_SIZE
     }
     if(checkNullish(data.theme)){
         data.theme = ''
@@ -141,13 +178,13 @@ export function setDatabase(data:Database){
         data.subModel = 'gemini-3-flash-preview'
     }
     if(checkNullish(data.timeOut)){
-        data.timeOut = 120
+        data.timeOut = DEFAULT_REQUEST_TIMEOUT
     }
     if(checkNullish(data.waifuWidth)){
-        data.waifuWidth = 100
+        data.waifuWidth = DEFAULT_WAIFU_WIDTH
     }
     if(checkNullish(data.waifuWidth2)){
-        data.waifuWidth2 = 100
+        data.waifuWidth2 = DEFAULT_WAIFU_WIDTH
     }
     if(checkNullish(data.emotionPrompt)){
         data.emotionPrompt = ""
@@ -176,10 +213,10 @@ export function setDatabase(data:Database){
         data.webUiUrl = 'http://127.0.0.1:7860/'
     }
     if(checkNullish(data.sdSteps)){
-        data.sdSteps = 30
+        data.sdSteps = DEFAULT_SD_STEPS
     }
     if(checkNullish(data.sdCFG)){
-        data.sdCFG = 7
+        data.sdCFG = DEFAULT_SD_CFG
     }
     if(checkNullish(data.NAIImgUrl)){
         data.NAIImgUrl = 'https://image.novelai.net/ai/generate-image'
@@ -203,7 +240,7 @@ export function setDatabase(data:Database){
         data.emotionPrompt2 = ""
     }
     if(checkNullish(data.requestRetrys)){
-        data.requestRetrys = 2
+        data.requestRetrys = DEFAULT_REQUEST_RETRIES
     }
     if(checkNullish(data.useSayNothing)){
         data.useSayNothing = true
@@ -249,8 +286,8 @@ export function setDatabase(data:Database){
     }
     if(checkNullish(data.sdConfig)){
         data.sdConfig = {
-            width:512,
-            height:512,
+            width:DEFAULT_SD_WIDTH,
+            height:DEFAULT_SD_HEIGHT,
             sampler_name:"Euler a",
             script_name:"",
             denoising_strength:0.7,
@@ -261,12 +298,12 @@ export function setDatabase(data:Database){
     }
     if(checkNullish(data.NAIImgConfig)){
         data.NAIImgConfig = {
-            width:1024,
-            height:1024,
+            width:DEFAULT_NAI_WIDTH,
+            height:DEFAULT_NAI_HEIGHT,
             sampler:"k_euler_ancestral",
             noise_schedule:"karras",
-            steps:28,
-            scale:5,
+            steps:DEFAULT_NAI_STEPS,
+            scale:DEFAULT_NAI_SCALE,
             cfg_rescale: 0,
             sm:true,
             sm_dyn:false,
@@ -384,7 +421,7 @@ export function setDatabase(data:Database){
     data.officialplugins ??= {}
     data.NAIsettings ??= safeStructuredClone(prebuiltNAIpresets)
     data.assetWidth ??= -1
-    data.animationSpeed ??= 0.4
+    data.animationSpeed ??= DEFAULT_ANIMATION_SPEED
     data.colorScheme ??= safeStructuredClone(defaultColorScheme)
     data.colorSchemeName ??= 'default'
     data.NAIsettings.starter ??= ""
@@ -418,7 +455,7 @@ export function setDatabase(data:Database){
     data.reverseProxyOobaArgs ??= {
         mode: 'instruct'
     }
-    data.top_p ??= 1
+    data.top_p ??= DEFAULT_TOP_P
     if(typeof(data.top_p) !== 'number'){
         //idk why type changes, but it does so this is a fix
         data.top_p = 1
@@ -427,7 +464,7 @@ export function setDatabase(data:Database){
     data.google ??= {}
     data.google.accessToken ??= ''
     data.google.projectId ??= ''
-    data.genTime ??= 1
+    data.genTime ??= DEFAULT_GEN_TIME
     data.promptSettings ??= {
         assistantPrefill: '',
         postEndInnerFormat: '',
@@ -449,7 +486,7 @@ export function setDatabase(data:Database){
     data.additionalParams ??= []
     data.heightMode ??= 'normal'
     data.antiClaudeOverload ??= false
-    data.maxSupaChunkSize ??= 1200
+    data.maxSupaChunkSize ??= DEFAULT_SUPA_CHUNK_SIZE
     data.ollamaURL ??= ''
     data.ollamaModel ??= ''
     data.autoContinueChat ??= false
@@ -488,7 +525,7 @@ export function setDatabase(data:Database){
     data.useInstructPrompt ??= false
     data.hanuraiEnable ??= false
     data.hanuraiSplit ??= false
-    data.hanuraiTokens ??= 1000
+    data.hanuraiTokens ??= DEFAULT_HANURAI_TOKENS
     data.textAreaSize ??= 0
     data.sideBarSize ??= 0
     data.textAreaTextSize ??= 0
@@ -496,14 +533,14 @@ export function setDatabase(data:Database){
     data.customPromptTemplateToggle ??= ''
     data.globalChatVariables ??= {}
     data.templateDefaultVariables ??= ''
-    data.hypaAllocatedTokens ??= 3000
-    data.hypaChunkSize ??= 3000
+    data.hypaAllocatedTokens ??= DEFAULT_HYPA_ALLOCATED_TOKENS
+    data.hypaChunkSize ??= DEFAULT_HYPA_CHUNK_SIZE
     data.dallEQuality ??= 'standard'
     data.customTextTheme.FontColorQuote1 ??= '#8BE9FD'
     data.customTextTheme.FontColorQuote2 ??= '#FFB86C'
     data.font ??= 'default'
     data.customFont ??= ''
-    data.lineHeight ??= 1.25
+    data.lineHeight ??= DEFAULT_LINE_HEIGHT
     data.stabilityModel ??= 'sd3-large'
     data.stabllityStyle ??= ''
     data.legacyTranslation ??= false
@@ -514,7 +551,7 @@ export function setDatabase(data:Database){
         posInputName: 'text',
         negNodeID: '',
         negInputName: 'text',
-        timeout: 30
+        timeout: DEFAULT_COMFY_TIMEOUT
     }
     data.hideApiKey ??= true
     data.unformatQuotes ??= false
@@ -549,7 +586,7 @@ export function setDatabase(data:Database){
     }
     data.customFlags ??= []
     data.enableCustomFlags ??= false
-    data.assetMaxDifference ??= 4
+    data.assetMaxDifference ??= DEFAULT_ASSET_MAX_DIFFERENCE
     data.showSavingIcon ??= false
     data.banCharacterset ??= []
     data.showPromptComparison ??= false
@@ -624,7 +661,7 @@ export function setDatabase(data:Database){
     data.simplifiedToolUse ??= false
     data.streamGeminiThoughts ??= false
     data.sourcemapTranslate ??= false
-    data.settingsCloseButtonSize ??= 24
+    data.settingsCloseButtonSize ??= DEFAULT_SETTINGS_CLOSE_BUTTON_SIZE
     data.hideAllImages ??= false
     data.ImagenModel ??= 'imagen-4.0-generate-001'
     data.ImagenImageSize ??= '1K'
@@ -1809,7 +1846,7 @@ export const defaultAIN:AINsettings = {
 }
 
 export const defaultOoba:OobaSettings = {
-    max_new_tokens: 180,
+    max_new_tokens: DEFAULT_OOBA_MAX_NEW_TOKENS,
     do_sample: true,
     temperature: 0.7,
     top_p: 0.9,
@@ -1825,7 +1862,7 @@ export const defaultOoba:OobaSettings = {
     early_stopping: false,
     seed: -1,
     add_bos_token: true,
-    truncation_length: 4096,
+    truncation_length: DEFAULT_OOBA_TRUNCATION_LENGTH,
     ban_eos_token: false,
     skip_special_tokens: true,
     top_a: 0,
@@ -1850,11 +1887,11 @@ export const presetTemplate:botPreset = {
     mainPrompt: defaultMainPrompt,
     jailbreak: defaultJailbreak,
     globalNote: "",
-    temperature: 80,
-    maxContext: 4000,
-    maxResponse: 300,
-    frequencyPenalty: 70,
-    PresensePenalty: 70,
+    temperature: DEFAULT_TEMPERATURE,
+    maxContext: DEFAULT_MAX_CONTEXT,
+    maxResponse: DEFAULT_PRESET_MAX_RESPONSE,
+    frequencyPenalty: DEFAULT_FREQUENCY_PENALTY,
+    PresensePenalty: DEFAULT_PRESENCE_PENALTY,
     formatingOrder: ['main', 'description', 'personaPrompt','chats','lastChat', 'jailbreak', 'lorebook', 'globalNote', 'authorNote'],
     aiModel: "gemini-3-flash-preview",
     subModel: "gemini-3-flash-preview",
@@ -1871,7 +1908,7 @@ export const presetTemplate:botPreset = {
     reverseProxyOobaArgs: {
         mode: 'instruct'
     },
-    top_p: 1,
+    top_p: DEFAULT_TOP_P,
     useInstructPrompt: false,
     verbosity: 1
 }

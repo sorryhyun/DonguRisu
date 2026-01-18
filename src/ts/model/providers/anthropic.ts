@@ -265,9 +265,9 @@ export const AnthropicModels: LLMModel[] = [
         parameters: ClaudeParameters,
         tokenizer: LLMTokenizer.Claude
     },
-    // Claude 2.x (2023)
+    // Claude 2.x (2023) - DEPRECATED: Anthropic discontinued these models in March 2024
     {
-        name: 'Claude 2.1',
+        name: 'Claude 2.1 (Deprecated)',
         id: 'claude-2.1',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
@@ -275,88 +275,98 @@ export const AnthropicModels: LLMModel[] = [
             LLMFlags.hasPrefill,
         ],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
     {
-        name: 'Claude 2',
+        name: 'Claude 2 (Deprecated)',
         id: 'claude-2',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
         flags: [LLMFlags.hasPrefill],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
     {
-        name: 'Claude 2 100k',
+        name: 'Claude 2 100k (Deprecated)',
         id: 'claude-2-100k',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
         flags: [LLMFlags.hasPrefill],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
-    // Claude 1.x (Legacy)
+    // Claude 1.x & Instant (Legacy) - DEPRECATED: These models are no longer available
     {
-        name: 'Claude v1.2',
+        name: 'Claude v1.2 (Deprecated)',
         id: 'claude-1.2',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
         flags: [LLMFlags.hasPrefill],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
     {
-        name: 'Claude v1.0',
+        name: 'Claude v1.0 (Deprecated)',
         id: 'claude-1.0',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
         flags: [LLMFlags.hasPrefill],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
     {
-        name: 'Claude v1',
+        name: 'Claude v1 (Deprecated)',
         id: 'claude-v1',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
         flags: [LLMFlags.hasPrefill],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
     {
-        name: 'Claude v1 100k',
+        name: 'Claude v1 100k (Deprecated)',
         id: 'claude-v1-100k',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
         flags: [LLMFlags.hasPrefill],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
     {
-        name: 'Claude Instant v1',
+        name: 'Claude Instant v1 (Deprecated)',
         id: 'claude-instant-v1',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
         flags: [LLMFlags.hasPrefill],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
     {
-        name: 'Claude Instant v1 100k',
+        name: 'Claude Instant v1 100k (Deprecated)',
         id: 'claude-instant-v1-100k',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
         flags: [LLMFlags.hasPrefill],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
     {
-        name: 'Claude Instant 1.2',
+        name: 'Claude Instant 1.2 (Deprecated)',
         id: 'claude-instant-1.2',
         provider: LLMProvider.Anthropic,
         format: LLMFormat.AnthropicLegacy,
         flags: [LLMFlags.hasPrefill],
         parameters: ClaudeParameters,
-        tokenizer: LLMTokenizer.Claude
+        tokenizer: LLMTokenizer.Claude,
+        deprecated: true
     },
 ]

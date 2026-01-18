@@ -11,6 +11,7 @@ import { getModuleLorebooks } from "./modules";
 import { CCardLib } from "@risuai/ccardlib";
 import { getChatVar, setChatVar } from "../parser.svelte";
 import { v4 } from "uuid";
+import { DEFAULT_LOREBOOK_INSERT_ORDER } from "../constants";
 
 export function addLorebook(type:number) {
     const selectedID = get(selectedCharID)
@@ -20,7 +21,7 @@ export function addLorebook(type:number) {
             comment: `New Lore ${DBState.db.characters[selectedID].globalLore.length + 1}`,
             content: '',
             mode: 'normal',
-            insertorder: 100,
+            insertorder: DEFAULT_LOREBOOK_INSERT_ORDER,
             alwaysActive: false,
             secondkey: "",
             selective: false
@@ -33,7 +34,7 @@ export function addLorebook(type:number) {
             comment: `New Lore ${DBState.db.characters[selectedID].chats[page].localLore.length + 1}`,
             content: '',
             mode: 'normal',
-            insertorder: 100,
+            insertorder: DEFAULT_LOREBOOK_INSERT_ORDER,
             alwaysActive: false,
             secondkey: "",
             selective: false
@@ -50,7 +51,7 @@ export function addLorebookFolder(type:number) {
             comment: `New Folder`,
             content: '',
             mode: 'folder',
-            insertorder: 100,
+            insertorder: DEFAULT_LOREBOOK_INSERT_ORDER,
             alwaysActive: false,
             secondkey: "",
             selective: false,
@@ -63,7 +64,7 @@ export function addLorebookFolder(type:number) {
             comment: `New Folder`,
             content: '',
             mode: 'folder',
-            insertorder: 100,
+            insertorder: DEFAULT_LOREBOOK_INSERT_ORDER,
             alwaysActive: false,
             secondkey: "",
             selective: false,

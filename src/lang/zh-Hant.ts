@@ -1380,5 +1380,6 @@ export const languageChineseTraditional = {
     "alwaysScrollToNewMessage": "始終捲動至新訊息（忽略捲動位置）",
     "disableMessage": "停用訊息",
     "newMessageButtonBottomCenter": "底部置中 (預設)",
-    "disableAbove": "為 AI 剪裁訊息"
+    "disableAbove": "為 AI 剪裁訊息",
+    "pluginV2Warning": "**棄用通知：** 外掛程式 V2 和 V2.1 已被棄用，將在未來版本中移除。\n\n**時程表：**\n- 立即：請考慮遷移到 V3.0\n- 2026年第三季：V2.0 支援將被移除\n- 2026年第四季：V2.1 支援將被移除\n\nV2.1 外掛程式缺乏 V3.0 的安全隔離功能，存在潛在的安全風險。\n\n**外掛程式開發者注意：** 請使用 plugins/migrationGuide.md 中的遷移指南遷移到 V3.0 API。V3.0 透過 iframe 沙箱和改進的 API 提供更好的安全性。"
 };

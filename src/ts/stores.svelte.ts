@@ -100,10 +100,16 @@ export function createSimpleCharacter(char:character|groupChat){
 
 }
 
+// Initialize size on module load and listen for resize events
+// NOTE: This listener is intentionally permanent (no cleanup) as it tracks
+// window size for the entire app session (responsive layout, DynamicGUI)
 updateSize()
 window.addEventListener("resize", updateSize);
+// NOTE: db is initialized as empty and populated by setDatabase() during bootstrap.
+// The double type assertion is required because Database has required properties,
+// but we know setDatabase() is called before any access to DBState.db.
 export const DBState = $state({
-    db: {} as any as Database
+    db: {} as unknown as Database
 });
 
 export const LoadingStatusState = $state({
@@ -143,6 +149,33 @@ openId: 0,
 
 //Set might be more ideal, however since Svelte doesn't support reactive Sets, using array for now
 export const hotReloading = $state<string[]>([])
+
+/** Maximum number of hot-reloading plugins to track to prevent unbounded growth */
+const MAX_HOT_RELOADING = 20
+
+/** Add a plugin to hot-reloading list with size limit */
+export function addToHotReloading(name: string) {
+    if (!hotReloading.includes(name)) {
+        hotReloading.push(name)
+        // Enforce size limit by removing oldest entries
+        while (hotReloading.length > MAX_HOT_RELOADING) {
+            hotReloading.shift()
+        }
+    }
+}
+
+/** Remove a plugin from hot-reloading list */
+export function removeFromHotReloading(name: string) {
+    const index = hotReloading.indexOf(name)
+    if (index !== -1) {
+        hotReloading.splice(index, 1)
+    }
+}
+
+/** Clear all hot-reloading state */
+export function clearHotReloading() {
+    hotReloading.length = 0
+}
 
 ReloadGUIPointer.subscribe(() => {
     ReloadChatPointer.set({})

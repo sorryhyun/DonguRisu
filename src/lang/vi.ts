@@ -1380,5 +1380,6 @@ export const languageVietnamese = {
     "disableMessage": "Vô hiệu hóa tin nhắn",
     "newMessageButtonFloatingCircle": "Vòng tròn nổi (Góc dưới bên phải)",
     "newMessageButtonBottomLeft": "Phía dưới bên trái",
-    "newMessageButtonBottomCenter": "Dưới cùng ở giữa (Mặc định)"
+    "newMessageButtonBottomCenter": "Dưới cùng ở giữa (Mặc định)",
+    "pluginV2Warning": "**THÔNG BÁO NGỪNG HỖ TRỢ:** Plugin V2 và V2.1 đã lỗi thời và sẽ bị xóa trong phiên bản tương lai.\n\n**Lịch trình:**\n- Ngay bây giờ: Cân nhắc chuyển sang V3.0\n- Q3 2026: Hỗ trợ V2.0 sẽ bị xóa\n- Q4 2026: Hỗ trợ V2.1 sẽ bị xóa\n\nCác plugin V2.1 thiếu tính năng cách ly bảo mật của V3.0 và có thể gây ra rủi ro bảo mật.\n\n**Dành cho nhà phát triển plugin:** Vui lòng chuyển sang API V3.0 bằng hướng dẫn di chuyển tại plugins/migrationGuide.md. V3.0 cung cấp bảo mật tốt hơn thông qua iframe sandboxing và các API được cải tiến."
 };

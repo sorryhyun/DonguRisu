@@ -1380,5 +1380,6 @@ export const languageGerman = {
     "alwaysScrollToNewMessage": "Immer zu neuen Nachrichten scrollen (Scrollposition ignorieren)",
     "disableAbove": "Nachrichten für KI kürzen",
     "autoScrollToNewMessage": "Automatisch zu neuen Nachrichten scrollen",
-    "newMessageButtonStyle": "Stil der Schaltfläche „Neue Nachricht“"
+    "newMessageButtonStyle": "Stil der Schaltfläche 'Neue Nachricht'",
+    "pluginV2Warning": "**HINWEIS ZUR EINSTELLUNG:** Plugin V2 und V2.1 sind veraltet und werden in einer zukünftigen Version entfernt.\n\n**Zeitplan:**\n- Sofort: Erwägen Sie die Migration zu V3.0\n- Q3 2026: V2.0-Unterstützung wird entfernt\n- Q4 2026: V2.1-Unterstützung wird entfernt\n\nV2.1-Plugins fehlt die Sicherheitsisolation von V3.0 und stellen potenzielle Sicherheitsrisiken dar.\n\n**Für Plugin-Entwickler:** Bitte migrieren Sie zur V3.0-API unter Verwendung des Migrationshandbuchs unter plugins/migrationGuide.md. V3.0 bietet durch iframe-Sandboxing und verbesserte APIs mehr Sicherheit."
 };

@@ -1380,5 +1380,6 @@ export const languageChinese = {
     "newMessageButtonBottomRight": "右下角",
     "alwaysScrollToNewMessage": "始终滚动到新消息（忽略滚动位置）",
     "autoScrollToNewMessage": "自动滚动至新消息",
-    "disableAbove": "为 AI 剪裁的消息"
+    "disableAbove": "为 AI 剪裁的消息",
+    "pluginV2Warning": "**弃用通知：** 插件 V2 和 V2.1 已被弃用，将在未来版本中移除。\n\n**时间表：**\n- 立即：请考虑迁移到 V3.0\n- 2026年第三季度：V2.0 支持将被移除\n- 2026年第四季度：V2.1 支持将被移除\n\nV2.1 插件缺乏 V3.0 的安全隔离功能，存在潜在的安全风险。\n\n**插件开发者注意：** 请使用 plugins/migrationGuide.md 中的迁移指南迁移到 V3.0 API。V3.0 通过 iframe 沙箱和改进的 API 提供更好的安全性。"
 };

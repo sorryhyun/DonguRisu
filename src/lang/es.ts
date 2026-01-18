@@ -1380,5 +1380,6 @@ export const languageSpanish = {
     "disableMessage": "Desactivar mensaje",
     "newMessageButtonStyle": "Estilo del botón de nuevo mensaje",
     "alwaysScrollToNewMessage": "Desplazarse siempre al nuevo mensaje (ignorar la posición de desplazamiento)",
-    "disableAbove": "Mensajes cortados para la IA"
+    "disableAbove": "Mensajes cortados para la IA",
+    "pluginV2Warning": "**AVISO DE OBSOLESCENCIA:** Los plugins V2 y V2.1 están obsoletos y serán eliminados en una versión futura.\n\n**Cronograma:**\n- Inmediato: Considere migrar a V3.0\n- Q3 2026: Se eliminará el soporte para V2.0\n- Q4 2026: Se eliminará el soporte para V2.1\n\nLos plugins V2.1 carecen del aislamiento de seguridad de V3.0 y presentan riesgos de seguridad potenciales.\n\n**Para desarrolladores de plugins:** Por favor, migre a la API V3.0 usando la guía de migración en plugins/migrationGuide.md. V3.0 proporciona mejor seguridad a través de sandboxing de iframe y APIs mejoradas."
 };

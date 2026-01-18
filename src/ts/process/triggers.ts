@@ -15,6 +15,7 @@ import { generateAIImage } from "./stableDiff";
 import { writeInlayImage } from "./files/inlays";
 import { runScripted } from "./scriptings";
 import { calcString } from "./infunctions";
+import { DEFAULT_LOREBOOK_INSERT_ORDER } from "../constants";
 
 
 export interface triggerscript{
@@ -2484,7 +2485,7 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
                         comment: name,
                         content: content,
                         mode: 'normal',
-                        insertorder: Number.isNaN(insertOrder) ? 100 : insertOrder,
+                        insertorder: Number.isNaN(insertOrder) ? DEFAULT_LOREBOOK_INSERT_ORDER : insertOrder,
                         alwaysActive: false,
                         secondkey: "",
                         selective: false
@@ -2519,7 +2520,7 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
                     char.globalLore[index].content = content
                     
                     let insertOrder = effect.insertOrderType === 'value' ? risuChatParser(effect.insertOrder,{chara:char}) : getVar(risuChatParser(effect.insertOrder,{chara:char}))
-                    insertOrder = insertOrder.replace(/{{slot}}/g, (currentLore.insertorder || 100).toString())
+                    insertOrder = insertOrder.replace(/{{slot}}/g, (currentLore.insertorder || DEFAULT_LOREBOOK_INSERT_ORDER).toString())
                     const insertOrderNum = Number(insertOrder)
                     if(!Number.isNaN(insertOrderNum)){
                         char.globalLore[index].insertorder = insertOrderNum

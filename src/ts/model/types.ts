@@ -98,6 +98,8 @@ export interface LLMModel{
     recommended?: boolean
     keyIdentifier?: string
     endpoint?: string
+    /** Mark model as deprecated - will show warning in UI */
+    deprecated?: boolean
 }
 
 export const ProviderNames = new Map<LLMProvider, string>([

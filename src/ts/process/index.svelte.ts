@@ -135,12 +135,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     function throwError(error:string){
 
         if(DBState.db.inlayErrorResponse){
-            if(DBState.db.characters[selectedChar].chats[selectedChat].message[DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1].role === 'char'){
-                DBState.db.characters[selectedChar].chats[selectedChat].message[DBState.db.characters[selectedChar].chats[selectedChat].message.length - 1].data += `\n\`\`\`risuerror\n${error}\n\`\`\``
-            }
-            else{
+            const messages = DBState.db.characters[selectedChar]?.chats[selectedChat]?.message
+            const lastMessage = messages?.[messages.length - 1]
 
-                DBState.db.characters[selectedChar].chats[selectedChat].message.push({
+            if(lastMessage?.role === 'char'){
+                lastMessage.data += `\n\`\`\`risuerror\n${error}\n\`\`\``
+            }
+            else if(messages){
+                messages.push({
                     role: 'char',
                     data: `\`\`\`risuerror\n${error}\n\`\`\``,
                     saying: currentChar.chaId,

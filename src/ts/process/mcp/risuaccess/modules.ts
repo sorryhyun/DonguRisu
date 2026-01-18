@@ -3,6 +3,7 @@ import { alertConfirm } from 'src/ts/alert'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
+import { DEFAULT_LOREBOOK_INSERT_ORDER } from 'src/ts/constants'
 
 const moduleNotFound = (id: string): RPCToolCallContent[] => [
   {
@@ -565,7 +566,7 @@ export class ModuleHandler extends MCPToolHandler {
         alwaysActive: alwaysActive || false,
         secondkey: '',
         selective: false,
-        insertorder: 100,
+        insertorder: DEFAULT_LOREBOOK_INSERT_ORDER,
         mode: 'normal' as const,
       }
       module.lorebook.push(newEntry)

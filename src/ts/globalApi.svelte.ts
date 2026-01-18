@@ -394,20 +394,22 @@ export async function saveDb() {
                 }
             }
             if (DBState?.db?.characters?.[selIdState]) {
-                for (const key in DBState.db.characters[selIdState]) {
+                const char = DBState.db.characters[selIdState]
+                for (const key in char) {
                     if (key !== 'chats') {
-                        $state.snapshot(DBState.db.characters[selIdState][key])
+                        $state.snapshot(char[key])
                     }
                 }
-                $state.snapshot(DBState.db.characters[selIdState].chats)
-                if (changeTracker.character[0] !== DBState.db.characters[selIdState]?.chaId) {
-                    changeTracker.character.unshift(DBState.db.characters[selIdState]?.chaId)
+                $state.snapshot(char.chats)
+                const currentChat = char.chats?.[char.chatPage]
+                if (changeTracker.character[0] !== char.chaId) {
+                    changeTracker.character.unshift(char.chaId)
                 }
                 if (
-                    changeTracker.chat[0]?.[0] !== DBState.db.characters[selIdState]?.chaId ||
-                    changeTracker.chat[0]?.[1] !== DBState.db.characters[selIdState]?.chats[DBState.db.characters[selIdState]?.chatPage].id
+                    changeTracker.chat[0]?.[0] !== char.chaId ||
+                    changeTracker.chat[0]?.[1] !== currentChat?.id
                 ) {
-                    changeTracker.chat.unshift([DBState.db.characters[selIdState]?.chaId, DBState.db.characters[selIdState]?.chats[DBState.db.characters[selIdState]?.chatPage].id])
+                    changeTracker.chat.unshift([char.chaId, currentChat?.id])
                 }
             }
             saveTimeoutExecute()
