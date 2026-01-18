@@ -95,8 +95,9 @@ export class AutoStorage{
                 if(z.formatversion){
                     await accountStorage.setItem('database/database.bin', comp)
                 }
-                
-            } catch (error) {}
+            } catch (error) {
+                console.error('Failed to verify and save migrated database:', error)
+            }
             this.realStorage = accountStorage
             alertStore.set({
                 type: "none",
@@ -129,14 +130,12 @@ export class AutoStorage{
                 return
             }
             if(isNodeServer){
-                console.log("using node storage")
                 this.realStorage = new NodeStorage()
                 return
             }
             else if(window.navigator?.storage?.getDirectory &&
                     FileSystemFileHandle?.prototype?.createWritable &&
                     localStorage.getItem('opfs_flag!') === "able"){
-                console.log("using opfs storage")
 
                 const forage = localforage.createInstance({
                     name: "risuai"
@@ -149,7 +148,6 @@ export class AutoStorage{
                     return
                 }
                 else if(!(await forage.getItem("denied_opfs"))){
-                    console.log("migrating")
                     const keys = await forage.keys()
                     let i = 0;
                     const opfs = new OpfsStorage()
@@ -170,7 +168,6 @@ export class AutoStorage{
                     return
                 }
             }
-            console.log("using forage storage")
             this.realStorage = localforage.createInstance({
                 name: "risuai"
             })

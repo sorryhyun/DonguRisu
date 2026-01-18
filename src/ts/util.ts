@@ -1126,8 +1126,7 @@ export function simplifySchema(schema:any, args:{
         }
         schema.type = (schema.type as string[]).filter(v => v !== 'null')[0]
     }
-    
-    console.log('schema',schema)
+
     const result:any = {
     }
 
@@ -1180,7 +1179,6 @@ export function simplifySchema(schema:any, args:{
     }
 
     if(schema.anyOf && schema.anyOf.length > 0){
-        console.log('anyOf', schema.anyOf)
         result.anyOf = schema.anyOf.map((v:any) => simplifySchema(v, args))
     }
 

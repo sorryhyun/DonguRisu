@@ -107,7 +107,9 @@ export async function loadExllamaFull(){
                     if(res.status === 200){
                         break
                     }
-                } catch (error) {}
+                } catch (error) {
+                    // Server not ready yet, will retry
+                }
             }
             await sleep(1000)
         }

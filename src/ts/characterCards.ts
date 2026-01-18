@@ -79,7 +79,6 @@ export async function importCharacterProcess(f:{
     db.statics.imports += 1
 
     if(f.name.endsWith('charx') || f.name.endsWith('jpg') || f.name.endsWith('jpeg')){
-        console.log('reading charx')
         alertStore.set({
             type: 'wait',
             msg: 'Loading... (Reading)'
@@ -726,8 +725,6 @@ async function importCharacterCardSpec(card:CharacterCardV2Risu|CharacterCardV3,
     if(!card ||(card.spec !== 'chara_card_v2' && card.spec !== 'chara_card_v3' )){
         return false
     }
-
-    console.log(`Importing ${card.spec}, mode is ${mode}`)
 
     const data = card.data
     let im = img ? await saveAsset(img) : undefined

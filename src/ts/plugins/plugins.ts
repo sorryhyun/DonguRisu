@@ -261,8 +261,7 @@ export async function importPlugin(code:string|null = null, argu:{
                     //Compatibility layer for unofficial meta
                     let metaStr = provied.slice(3).join(' ').replace(
                         /{{(.+?)(::?(.+?))?}}/g,
-                        (a,g1:string,g2,g3:string) => {
-                            console.log(g1,g3)
+                        (_a, g1:string, _g2, g3:string) => {
                             meta[g1] = g3 || '1'
                             return ''
                         }
@@ -447,7 +446,6 @@ export async function importPlugin(code:string|null = null, argu:{
             hotReloading.push(pluginData.name)
         }
 
-        console.log(`Imported plugin: ${pluginData.name} (API v${apiVersion})`)
         setDatabaseLite(db)
 
         loadPlugins()
@@ -461,7 +459,6 @@ export async function importPlugin(code:string|null = null, argu:{
 let pluginTranslator = false
 
 export async function loadPlugins() {
-    console.log('Loading plugins...')
     let db = getDatabase()
 
 
@@ -706,7 +703,6 @@ export const getV2PluginAPIs = () => {
                         return (target as any)[prop];
                     }
                     else if(target.pluginCustomStorage){
-                        console.log('Getting custom db property', prop.toString());
                         return target.pluginCustomStorage[prop.toString()];
                     }
                     return undefined;
@@ -717,7 +713,6 @@ export const getV2PluginAPIs = () => {
                         return true;
                     }
                     else{
-                        console.log('Setting custom db property', prop.toString(), value);
                         target.pluginCustomStorage ??= {}
                         target.pluginCustomStorage[prop.toString()] = value;
                         return true;
@@ -730,8 +725,7 @@ export const getV2PluginAPIs = () => {
                     }
                     return keys;
                 },
-                deleteProperty(target, prop) {
-                    console.log('Attempt to delete db.' + String(prop) + ' denied in safe database proxy.');
+                deleteProperty(_target, _prop) {
                     return false;
                 },
                 getPrototypeOf(target) {
@@ -825,6 +819,18 @@ export const getV2PluginAPIs = () => {
 }
 
 export async function loadV2Plugin(plugins: RisuPlugin[]) {
+    // DEPRECATION WARNING: V2.0 and V2.1 plugins are deprecated
+    if (plugins.length > 0) {
+        console.warn(
+            `[RisuAI Plugin Deprecation] ${plugins.length} V2.x plugin(s) loaded. ` +
+            `V2.0 and V2.1 plugins are deprecated and will be removed in a future release. ` +
+            `Please migrate to V3.0 for improved security and features. ` +
+            `See plugins/migrationGuide.md for migration instructions.`
+        )
+        for (const plugin of plugins) {
+            console.warn(`  - ${plugin.name} (API v${plugin.version})`)
+        }
+    }
 
     if (pluginV2.loaded) {
         for (const unload of pluginV2.unload) {
@@ -887,27 +893,21 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
         if(version === '2.1'){
             const safety = (await checkCodeSafety(plugin.script))
             data = safety.modifiedCode
-            console.log('Safety check result:', safety)
-            console.log('Loading V2.1 Plugin', plugin.name, data)
 
             try {
                 new Function(createRealScript(data))()
             } catch (error) {
-                console.error(error)
+                console.error(`Failed to load V2.1 plugin ${plugin.name}:`, error)
             }
-
-            console.log('Loaded V2.1 Plugin', plugin.name)
         }
         else{
             data = plugin.script
-            console.log('Loading V2.0 Plugin', plugin.name)
 
             try {
                 eval(createRealScript(data))
             } catch (error) {
-                console.error(error)
+                console.error(`Failed to load V2.0 plugin ${plugin.name}:`, error)
             }
-            console.log('Loaded V2.0 Plugin', plugin.name)
         }
 
 

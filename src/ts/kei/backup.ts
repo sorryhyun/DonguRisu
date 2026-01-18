@@ -98,7 +98,9 @@ export function saveDbKei() {
                     database: db
                 })
             })
-        }   
+        }
     }
-    catch(e){}
+    catch(e){
+        console.error('Failed to perform auto server backup:', e)
+    }
 }

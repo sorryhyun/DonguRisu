@@ -1084,7 +1084,9 @@ async function makeLuaFactory(){
                     code = await res.text()
                     break
                 }
-            } catch (error) {}
+            } catch (error) {
+                // Retry on fetch failure
+            }
         }
         await _luaFactory.mountFile(name,code)
     }

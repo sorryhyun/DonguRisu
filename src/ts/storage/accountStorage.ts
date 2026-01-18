@@ -173,7 +173,9 @@ export class AccountStorage{
                 db.account = JSON.parse(localStorage.getItem("fallbackRisuToken"))
                 this.auth = db?.account?.token
                 db.account.useSync = true
-            } catch (error) {}
+            } catch (error) {
+                // Fallback token parsing failed - this is expected when not logged in
+            }
         }
     }
 

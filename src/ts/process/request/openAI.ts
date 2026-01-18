@@ -234,7 +234,6 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
         })
     }
 
-    console.log(formatedChat)
     if(arg.modelInfo.format === LLMFormat.Mistral){
         requestModel = aiModel
 
@@ -655,8 +654,10 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
             else if(value.startsWith('json::')){
                 value = value.replace('json::', '')
                 try {
-                    body[key] = JSON.parse(value)                            
-                } catch (error) {}
+                    body[key] = JSON.parse(value)
+                } catch (error) {
+                    // Invalid JSON in additional params, skip
+                }
             }
             else if((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))){
                 body = setObjectValue(body, key, value.slice(1, -1))
@@ -1274,14 +1275,16 @@ function getTranStream(arg:RequestDataArgumentExtended):TransformStream<Uint8Arr
                                             toolCallsData[index].function.arguments += toolCall.function.arguments
                                         }
                                     }
-                                    
+
                                     readed["__tool_calls"] = JSON.stringify(toolCallsData)
                                 }
                                 if(choice?.delta?.reasoning_content){
                                     reasoningContent += choice.delta.reasoning_content
                                 }
                             }
-                        } catch (error) {}
+                        } catch (error) {
+                            // Skip malformed SSE chunk
+                        }
                     }
                 }
                 
